@@ -2,6 +2,7 @@
 import { HttpClient } from '../http/httpClient';
 // GuildPass SDK: Import external module dependencies.
 import { validateAddress, validateGuildId } from '../utils/validation';
+import { normaliseAddress } from '../utils/address';
 import { encodePathSegment } from '../utils/formatting';
 // GuildPass SDK: Pull in package or module bindings.
 import { GetRolesParams, GetUserRolesParams, GuildRole } from './roles.types';
@@ -38,7 +39,7 @@ export class RolesService {
 
     // GuildPass SDK: Terminate function block execution and return.
     return this.http.get<GuildRole[]>(
-      `/guilds/${encodePathSegment(guildId)}/members/${encodePathSegment(walletAddress)}/roles`,
+      `/guilds/${encodePathSegment(guildId)}/members/${encodePathSegment(normaliseAddress(walletAddress))}/roles`,
     );
     // GuildPass SDK: End of logic containment structure block.
   }
