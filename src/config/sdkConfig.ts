@@ -1,3 +1,5 @@
+// GuildPass SDK: Import external module dependencies.
+import { HttpHooks } from '../http/http.types';
 import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
 
@@ -9,6 +11,7 @@ export type GuildPassClientConfig = {
   contractAddress?: string;
   apiKey?: string;
   timeoutMs?: number;
+  hooks?: HttpHooks;
   /**
    * When true, service responses are checked against runtime shape guards
    * before being returned, throwing a GuildPassError with code
