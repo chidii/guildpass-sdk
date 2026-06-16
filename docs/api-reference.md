@@ -75,3 +75,57 @@ Fetches basic guild metadata.
 Fetches full guild configuration.
 
 - **Returns**: `Promise<GuildConfig>`
+
+---
+
+## Response Validation
+
+By default, service methods trust that the API response matches the
+declared TypeScript return type. Since that's only a compile-time
+guarantee, a malformed or incompatible response from the API (or a
+misbehaving mock/proxy in front of it) would otherwise be returned to
+your code as-is.
+
+Set `validateResponses: true` in the client config to opt into runtime
+checks on responses for the core public types (`AccessCheckResult`,
+`Membership`, `GuildRole`, `Guild`, `GuildConfig`):
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: '...',
+  validateResponses: true,
+});
+```
+
+When enabled, a response that doesn't match the expected shape causes
+the SDK method to throw a `GuildPassError` with
+`code: GuildPassErrorCode.INVALID_RESPONSE`, instead of silently
+returning malformed data:
+
+```typescript
+try {
+  await client.access.checkAccess({ ... });
+} catch (error) {
+  if (error instanceof GuildPassError && error.code === GuildPassErrorCode.INVALID_RESPONSE) {
+    // The API returned a response that doesn't match AccessCheckResult.
+  }
+}
+```
+
+This flag defaults to `false` to preserve existing behaviour for
+current consumers. The guards themselves (`isAccessCheckResult`,
+`isMembership`, `isGuildRoleArray`, `isGuild`, `isGuildConfig`) are
+also exported directly from the package if you want to validate
+responses yourself without enabling the flag:
+
+```typescript
+import { isGuild } from '@guildpass/sdk';
+
+if (!isGuild(someUnknownValue)) {
+  // handle the malformed payload
+}
+```
+
+The guards are hand-written, dependency-free type predicates — no
+schema validation library is used, so enabling this option has a
+negligible effect on bundle size.

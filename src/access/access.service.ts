@@ -7,13 +7,18 @@ import {
   validateResourceId,
   validateRoleId,
 } from '../utils/validation';
+import { assertValidResponse } from '../validation/assertResponse';
+import { isAccessCheckResult } from '../validation/responseGuards';
 // GuildPass SDK: Import external module dependencies.
 import { AccessCheckParams, AccessCheckResult, RoleAccessCheckParams } from './access.types';
 
 // GuildPass SDK: Exported component definition.
 export class AccessService {
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(private readonly http: HttpClient) {}
+  constructor(
+    private readonly http: HttpClient,
+    private readonly validateResponses = false,
+  ) {}
 
   /**
    * Checks whether a wallet has access to a gated resource.
@@ -28,7 +33,7 @@ export class AccessService {
     validateResourceId(resourceId);
 
     // GuildPass SDK: Return evaluated output value.
-    return this.http.get<AccessCheckResult>(`/access/check`, {
+    const result = await this.http.get<AccessCheckResult>(`/access/check`, {
       // GuildPass SDK: Execution block boundary initialization.
       params: {
         address: walletAddress,
@@ -38,6 +43,10 @@ export class AccessService {
       },
       // GuildPass SDK: End of logic containment structure block.
     });
+
+    return this.validateResponses
+      ? assertValidResponse(result, isAccessCheckResult, 'AccessCheckResult')
+      : result;
     // GuildPass SDK: End of logic containment structure block.
   }
 

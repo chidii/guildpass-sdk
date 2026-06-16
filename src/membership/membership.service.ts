@@ -2,13 +2,18 @@
 import { HttpClient } from '../http/httpClient';
 // GuildPass SDK: Pull in package or module bindings.
 import { validateAddress, validateGuildId } from '../utils/validation';
+import { assertValidResponse } from '../validation/assertResponse';
+import { isMembership } from '../validation/responseGuards';
 // GuildPass SDK: Import external module dependencies.
 import { Membership, MembershipParams } from './membership.types';
 
 // GuildPass SDK: Core operational type definition.
 export class MembershipService {
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(private readonly http: HttpClient) {}
+  constructor(
+    private readonly http: HttpClient,
+    private readonly validateResponses = false,
+  ) {}
 
   /**
    * Fetches wallet membership status for a specific guild.
@@ -22,7 +27,7 @@ export class MembershipService {
     validateGuildId(guildId);
 
     // GuildPass SDK: Terminate function block execution and return.
-    return this.http.get<Membership>(`/membership`, {
+    const result = await this.http.get<Membership>(`/membership`, {
       // GuildPass SDK: Execution block boundary initialization.
       params: {
         address: walletAddress,
@@ -31,6 +36,10 @@ export class MembershipService {
       },
       // GuildPass SDK: End of logic containment structure block.
     });
+
+    return this.validateResponses
+      ? assertValidResponse(result, isMembership, 'Membership')
+      : result;
     // GuildPass SDK: End of logic containment structure block.
   }
 

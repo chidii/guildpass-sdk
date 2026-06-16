@@ -23,6 +23,9 @@ try {
       case GuildPassErrorCode.TIMEOUT:
         // Handle network timeout
         break;
+      case GuildPassErrorCode.INVALID_RESPONSE:
+        // Handle a malformed API response (only thrown when validateResponses is enabled)
+        break;
     }
   }
 }

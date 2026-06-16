@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GuildPassClient } from '../src/client/GuildPassClient';
+import { GuildPassError } from '../src/errors/GuildPassError';
+import { GuildPassErrorCode } from '../src/errors/errorCodes';
+
+function mockJsonResponse(body: unknown) {
+  (fetch as any).mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+    headers: new Headers(),
+  });
+}
 
 describe('Service Modules', () => {
   let client: GuildPassClient;
@@ -96,7 +107,10 @@ describe('Service Modules', () => {
         headers: new Headers(),
       });
 
-      const result = await client.roles.getUserRoles({ guildId: 'guild/1', walletAddress: '0x123/456 space' });
+      const result = await client.roles.getUserRoles({
+        guildId: 'guild/1',
+        walletAddress: '0x123/456 space',
+      });
       expect(result).toEqual(mockRoles);
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining('/guilds/guild%2F1/members/0x123%2F456%20space/roles'),
@@ -134,6 +148,146 @@ describe('Service Modules', () => {
         expect.stringContaining('/guilds/guild%2F1'),
         expect.any(Object),
       );
+    });
+  });
+
+  describe('Response Validation (validateResponses)', () => {
+    let validatingClient: GuildPassClient;
+
+    beforeEach(() => {
+      validatingClient = new GuildPassClient({
+        apiUrl: 'https://api.test.com',
+        validateResponses: true,
+      });
+    });
+
+    it('is off by default, so malformed responses are passed through unchanged', async () => {
+      const malformedResult = { hasAccess: true };
+      mockJsonResponse(malformedResult);
+
+      const result = await client.access.checkAccess({
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+        resourceId: 'res_1',
+      });
+
+      expect(result).toEqual(malformedResult);
+    });
+
+    it('rejects a malformed AccessCheckResult with a clear GuildPassError', async () => {
+      mockJsonResponse({ hasAccess: true });
+
+      await expect(
+        validatingClient.access.checkAccess({
+          walletAddress: '0x1234567890123456789012345678901234567890',
+          guildId: 'guild_1',
+          resourceId: 'res_1',
+        }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_RESPONSE,
+        message: expect.stringContaining('AccessCheckResult'),
+      });
+    });
+
+    it('accepts a well-formed AccessCheckResult', async () => {
+      const mockResult = {
+        hasAccess: true,
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+        resourceId: 'res_1',
+        requiredRoles: ['member'],
+        matchedRoles: ['member'],
+      };
+      mockJsonResponse(mockResult);
+
+      const result = await validatingClient.access.checkAccess({
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+        resourceId: 'res_1',
+      });
+
+      expect(result).toEqual(mockResult);
+    });
+
+    it('rejects a malformed Membership response with a clear GuildPassError', async () => {
+      mockJsonResponse({ isActive: true });
+
+      await expect(
+        validatingClient.membership.getMembership({
+          walletAddress: '0x1234567890123456789012345678901234567890',
+          guildId: 'guild_1',
+        }),
+      ).rejects.toBeInstanceOf(GuildPassError);
+    });
+
+    it('accepts a well-formed Membership response', async () => {
+      const mockMembership = {
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+        isActive: true,
+        roles: ['member'],
+      };
+      mockJsonResponse(mockMembership);
+
+      const result = await validatingClient.membership.getMembership({
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+      });
+
+      expect(result).toEqual(mockMembership);
+    });
+
+    it('rejects a malformed GuildRole[] response with a clear GuildPassError', async () => {
+      mockJsonResponse([{ id: '1' }]);
+
+      await expect(validatingClient.roles.getRoles({ guildId: 'guild_1' })).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_RESPONSE,
+      });
+    });
+
+    it('accepts a well-formed GuildRole[] response', async () => {
+      const mockRoles = [{ id: '1', name: 'Role 1' }];
+      mockJsonResponse(mockRoles);
+
+      const result = await validatingClient.roles.getRoles({ guildId: 'guild_1' });
+      expect(result).toEqual(mockRoles);
+    });
+
+    it('rejects a malformed Guild response with a clear GuildPassError', async () => {
+      mockJsonResponse({ id: 'guild_1' });
+
+      await expect(validatingClient.guilds.getGuild({ guildId: 'guild_1' })).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_RESPONSE,
+      });
+    });
+
+    it('accepts a well-formed Guild response', async () => {
+      const mockGuild = {
+        id: 'guild_1',
+        name: 'Test Guild',
+        ownerAddress: '0x1234567890123456789012345678901234567890',
+        chainId: 1,
+      };
+      mockJsonResponse(mockGuild);
+
+      const result = await validatingClient.guilds.getGuild({ guildId: 'guild_1' });
+      expect(result).toEqual(mockGuild);
+    });
+
+    it('rejects a malformed GuildConfig response with a clear GuildPassError', async () => {
+      mockJsonResponse({ theme: 'dark' });
+
+      await expect(
+        validatingClient.guilds.getGuildConfig({ guildId: 'guild_1' }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_RESPONSE });
+    });
+
+    it('accepts a well-formed GuildConfig response', async () => {
+      const mockGuildConfig = { id: 'guild_1', theme: 'dark' };
+      mockJsonResponse(mockGuildConfig);
+
+      const result = await validatingClient.guilds.getGuildConfig({ guildId: 'guild_1' });
+      expect(result).toEqual(mockGuildConfig);
     });
   });
 });
