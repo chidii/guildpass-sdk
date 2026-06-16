@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GuildPassClient } from '../src/client/GuildPassClient';
 import { GuildPassError } from '../src/errors/GuildPassError';
 import { GuildPassErrorCode } from '../src/errors/errorCodes';
+import apiContract from './fixtures/api-contract.json';
 
 function mockJsonResponse(body: unknown) {
   (fetch as any).mockResolvedValue({
@@ -216,10 +217,6 @@ describe('Service Modules', () => {
       });
 
       const result = await client.roles.getUserRoles({ guildId: 'guild/1', walletAddress: '0x1234567890123456789012345678901234567890' });
-      const result = await client.roles.getUserRoles({
-        guildId: 'guild/1',
-        walletAddress: '0x123/456 space',
-      });
       expect(result).toEqual(mockRoles);
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining('/guilds/guild%2F1/members/0x1234567890123456789012345678901234567890/roles'),
@@ -397,6 +394,146 @@ describe('Service Modules', () => {
 
       const result = await validatingClient.guilds.getGuildConfig({ guildId: 'guild_1' });
       expect(result).toEqual(mockGuildConfig);
+    });
+  });
+
+  describe('API Contract Tests', () => {
+    let client: GuildPassClient;
+
+    beforeEach(() => {
+      client = new GuildPassClient({ apiUrl: 'https://api.test.com' });
+      vi.stubGlobal('fetch', vi.fn());
+    });
+
+    it('should match access check contract', async () => {
+      const fixture = apiContract.access.check;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.access.checkAccess({
+        walletAddress: fixture.response.success.walletAddress,
+        guildId: fixture.response.success.guildId,
+        resourceId: fixture.response.success.resourceId,
+      });
+
+      expect(result).toEqual(fixture.response.success);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+      const urlCall = (fetch as any).mock.calls[0][0];
+      expect(urlCall).toContain(`address=${fixture.response.success.walletAddress}`);
+      expect(urlCall).toContain(`guildId=${fixture.response.success.guildId}`);
+      expect(urlCall).toContain(`resourceId=${fixture.response.success.resourceId}`);
+    });
+
+    it('should match role check contract', async () => {
+      const fixture = apiContract.access.roleCheck;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.access.checkRoleAccess({
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+        roleId: 'role_1',
+      });
+
+      expect(result).toEqual(fixture.response.success.hasRole);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+    });
+
+    it('should match membership get contract', async () => {
+      const fixture = apiContract.membership.get;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.membership.getMembership({
+        walletAddress: fixture.response.success.walletAddress,
+        guildId: fixture.response.success.guildId,
+      });
+
+      expect(result).toEqual(fixture.response.success);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+    });
+
+    it('should match get roles contract', async () => {
+      const fixture = apiContract.roles.getRoles;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.roles.getRoles({
+        guildId: 'guild_1',
+      });
+
+      expect(result).toEqual(fixture.response.success);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+    });
+
+    it('should match get user roles contract', async () => {
+      const fixture = apiContract.roles.getUserRoles;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.roles.getUserRoles({
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+      });
+
+      expect(result).toEqual(fixture.response.success);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+    });
+
+    it('should match get guild contract', async () => {
+      const fixture = apiContract.guilds.getGuild;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.guilds.getGuild({
+        guildId: fixture.response.success.id,
+      });
+
+      expect(result).toEqual(fixture.response.success);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+    });
+
+    it('should match get guild config contract', async () => {
+      const fixture = apiContract.guilds.getGuildConfig;
+      mockJsonResponse(fixture.response.success);
+
+      const result = await client.guilds.getGuildConfig({
+        guildId: fixture.response.success.id,
+      });
+
+      expect(result).toEqual(fixture.response.success);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(fixture.request.path),
+        expect.any(Object)
+      );
+    });
+
+    it('should handle API contract errors', async () => {
+      const fixture = apiContract.access.check;
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve(fixture.response.error),
+        headers: new Headers({'content-type': 'application/json'}),
+      });
+
+      await expect(client.access.checkAccess({
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        guildId: 'guild_1',
+        resourceId: 'res_1',
+      })).rejects.toThrow();
     });
   });
 });
