@@ -215,10 +215,9 @@ describe('Service Modules', () => {
         headers: new Headers(),
       });
 
-      const result = await client.roles.getUserRoles({ guildId: 'guild/1', walletAddress: '0x1234567890123456789012345678901234567890' });
       const result = await client.roles.getUserRoles({
         guildId: 'guild/1',
-        walletAddress: '0x123/456 space',
+        walletAddress: '0x1234567890123456789012345678901234567890',
       });
       expect(result).toEqual(mockRoles);
       expect(fetch).toHaveBeenCalledWith(
