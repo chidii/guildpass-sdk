@@ -3,6 +3,35 @@ import { GuildPassError } from '../errors/GuildPassError';
 // GuildPass SDK: Import external module dependencies.
 import { GuildPassErrorCode } from '../errors/errorCodes';
 // GuildPass SDK: Pull in package or module bindings.
+import { HttpRequestOptions, HttpResponse, RetryConfig } from './http.types';
+
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
+const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
+function resolveRetry(global: RetryConfig | undefined, local: RetryConfig | undefined): Required<RetryConfig> {
+  const merged = { ...global, ...local };
+  return {
+    maxRetries: merged.maxRetries ?? 0,
+    baseDelayMs: merged.baseDelayMs ?? 200,
+    maxDelayMs: merged.maxDelayMs ?? 5000,
+    retryableStatuses: merged.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES,
+    allowMutatingRetry: merged.allowMutatingRetry ?? false,
+  };
+}
+
+function getRetryAfterMs(headers: Headers): number | null {
+  const header = headers.get('Retry-After');
+  if (!header) return null;
+  const seconds = Number(header);
+  if (!isNaN(seconds)) return seconds * 1000;
+  const date = Date.parse(header);
+  if (!isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 import { HttpRequestOptions, HttpResponse, HttpHooks, RequestHookPayload } from './http.types';
 
 // GuildPass SDK: Exposed interface structure.
@@ -14,6 +43,14 @@ export class HttpClient {
   // GuildPass SDK: Class member structure property or constructor.
   private readonly timeoutMs: number;
   // GuildPass SDK: Class member structure property or constructor.
+  private readonly globalRetry?: RetryConfig;
+
+  // GuildPass SDK: Class member structure property or constructor.
+  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, retry?: RetryConfig) {
+    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    this.apiKey = apiKey;
+    this.timeoutMs = timeoutMs;
+    this.globalRetry = retry;
   private readonly hooks?: HttpHooks;
 
   // GuildPass SDK: Class member structure property or constructor.
@@ -30,11 +67,8 @@ export class HttpClient {
     path: string,
     options?: Omit<HttpRequestOptions, 'method' | 'body'>,
   ): Promise<T> {
-    // GuildPass SDK: Variable binding initialization.
     const response = await this.request<T>(path, { ...options, method: 'GET' });
-    // GuildPass SDK: Terminate function block execution and return.
     return response.data;
-    // GuildPass SDK: End of logic containment structure block.
   }
 
   // GuildPass SDK: Class member structure property or constructor.
@@ -43,11 +77,8 @@ export class HttpClient {
     body?: any,
     options?: Omit<HttpRequestOptions, 'method' | 'body'>,
   ): Promise<T> {
-    // GuildPass SDK: Local block-scoped constant reference.
     const response = await this.request<T>(path, { ...options, method: 'POST', body });
-    // GuildPass SDK: Send back computed results to the caller.
     return response.data;
-    // GuildPass SDK: End of logic containment structure block.
   }
 
   // GuildPass SDK: Class member structure property or constructor.
@@ -55,8 +86,12 @@ export class HttpClient {
     path: string,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponse<T>> {
-    // GuildPass SDK: Define internal reference identifier.
-    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs } = options;
+    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs, retry } = options;
+
+    const retryConfig = resolveRetry(this.globalRetry, retry);
+    const canRetry =
+      retryConfig.maxRetries > 0 &&
+      (IDEMPOTENT_METHODS.has(method) || retryConfig.allowMutatingRetry);
 
     // GuildPass SDK: Variable binding initialization.
     const startTime = Date.now();
@@ -72,63 +107,87 @@ export class HttpClient {
 
     // GuildPass SDK: Variable binding initialization.
     const url = new URL(`${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`);
-    // GuildPass SDK: Verify constraint requirements before proceeding.
     if (params) {
-      // GuildPass SDK: Execution block boundary initialization.
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.append(key, String(value));
-        // GuildPass SDK: End of logic containment structure block.
       });
-      // GuildPass SDK: End of logic containment structure block.
     }
 
-    // GuildPass SDK: Local block-scoped constant reference.
-    const controller = new AbortController();
-    // GuildPass SDK: Define internal reference identifier.
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    // GuildPass SDK: Variable binding initialization.
     const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       ...headers,
-      // GuildPass SDK: End of logic containment structure block.
     };
-
-    // GuildPass SDK: Evaluate branch condition logic.
     if (this.apiKey) {
       requestHeaders['X-API-Key'] = this.apiKey;
-      // GuildPass SDK: End of logic containment structure block.
     }
 
-    // GuildPass SDK: Execution block boundary initialization.
-    try {
-      // GuildPass SDK: Local block-scoped constant reference.
-      const response = await fetch(url.toString(), {
-        method,
-        headers: requestHeaders,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-        // GuildPass SDK: End of logic containment structure block.
-      });
+    let attempt = 0;
 
-      clearTimeout(timeoutId);
+    while (true) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      // GuildPass SDK: Conditional check guard path.
-      if (!response.ok) {
-        // GuildPass SDK: Define internal reference identifier.
-        let errorData;
-        // GuildPass SDK: Execution block boundary initialization.
-        try {
-          errorData = await response.json();
-          // GuildPass SDK: Execution block boundary initialization.
-        } catch {
-          errorData = null;
-          // GuildPass SDK: End of logic containment structure block.
+      try {
+        const response = await fetch(url.toString(), {
+          method,
+          headers: requestHeaders,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const isRetryable = canRetry && retryConfig.retryableStatuses.includes(response.status);
+          if (isRetryable && attempt < retryConfig.maxRetries) {
+            const retryAfter = getRetryAfterMs(response.headers);
+            const backoff = Math.min(retryConfig.baseDelayMs * 2 ** attempt, retryConfig.maxDelayMs);
+            await delay(retryAfter ?? backoff);
+            attempt++;
+            continue;
+          }
+
+          let errorData;
+          try {
+            errorData = await response.json();
+          } catch {
+            errorData = null;
+          }
+          throw GuildPassError.fromHttpError(response.status, errorData);
         }
-        throw GuildPassError.fromHttpError(response.status, errorData);
-        // GuildPass SDK: End of logic containment structure block.
-      }
 
+        const data = await response.json();
+        return { data, status: response.status, headers: response.headers };
+
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+          throw new GuildPassError(
+            `Request timed out after ${timeoutMs}ms`,
+            GuildPassErrorCode.TIMEOUT,
+          );
+        }
+
+        if (error instanceof GuildPassError) {
+          throw error;
+        }
+
+        // Network-level errors (fetch rejection) are safe to retry on idempotent methods.
+        if (canRetry && attempt < retryConfig.maxRetries) {
+          const backoff = Math.min(retryConfig.baseDelayMs * 2 ** attempt, retryConfig.maxDelayMs);
+          await delay(backoff);
+          attempt++;
+          continue;
+        }
+
+        throw new GuildPassError(
+          error.message || 'Unknown network error',
+          GuildPassErrorCode.HTTP_ERROR,
+          undefined,
+          error,
+        );
+      }
       // GuildPass SDK: Variable binding initialization.
       const data = await response.json();
       const durationMs = Date.now() - startTime;
@@ -183,7 +242,5 @@ export class HttpClient {
 
       throw finalError;
     }
-    // GuildPass SDK: End of logic containment structure block.
   }
-  // GuildPass SDK: End of logic containment structure block.
 }

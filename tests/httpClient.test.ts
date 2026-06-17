@@ -1,5 +1,5 @@
 // GuildPass SDK: Pull in package or module bindings.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // GuildPass SDK: Import external module dependencies.
 import { HttpClient } from '../src/http/httpClient';
 // GuildPass SDK: Pull in package or module bindings.
@@ -7,43 +7,35 @@ import { GuildPassErrorCode } from '../src/errors/errorCodes';
 
 // GuildPass SDK: Test suite container block.
 describe('HttpClient', () => {
-  // GuildPass SDK: Variable binding initialization.
   const baseUrl = 'https://api.test.com';
-  // GuildPass SDK: Local block-scoped constant reference.
   let client: HttpClient;
 
-  // GuildPass SDK: Execution block boundary initialization.
   beforeEach(() => {
     client = new HttpClient(baseUrl);
     vi.stubGlobal('fetch', vi.fn());
-    // GuildPass SDK: End of logic containment structure block.
   });
 
-  // GuildPass SDK: Validate unit assertion test case.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('should make GET request with correct URL and headers', async () => {
-    // GuildPass SDK: Define internal reference identifier.
     const mockResponse = { data: 'test' };
-    // GuildPass SDK: Execution block boundary initialization.
     (fetch as any).mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve(mockResponse),
       headers: new Headers(),
-      // GuildPass SDK: End of logic containment structure block.
     });
 
-    // GuildPass SDK: Variable binding initialization.
     const result = await client.get('/test-path', { params: { foo: 'bar' } });
 
     expect(result).toEqual(mockResponse);
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('/test-path?foo=bar'),
-      // GuildPass SDK: Execution block boundary initialization.
       expect.objectContaining({
         method: 'GET',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-        }),
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       }),
     );
   });
@@ -62,9 +54,7 @@ describe('HttpClient', () => {
     expect(fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        headers: expect.objectContaining({
-          'X-API-Key': 'secret-key',
-        }),
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
       }),
     );
   });
@@ -74,14 +64,13 @@ describe('HttpClient', () => {
       ok: false,
       status: 404,
       json: () => Promise.resolve({ error: 'Not Found' }),
+      headers: new Headers(),
     });
 
-    try {
-      await client.get('/not-found');
-    } catch (error: any) {
-      expect(error.code).toBe(GuildPassErrorCode.NOT_FOUND);
-      expect(error.status).toBe(404);
-    }
+    await expect(client.get('/not-found')).rejects.toMatchObject({
+      code: GuildPassErrorCode.NOT_FOUND,
+      status: 404,
+    });
   });
 
   it('should throw TIMEOUT error on abort', async () => {
@@ -91,11 +80,162 @@ describe('HttpClient', () => {
       return Promise.reject(error);
     });
 
-    try {
-      await client.get('/timeout');
-    } catch (error: any) {
-      expect(error.code).toBe(GuildPassErrorCode.TIMEOUT);
-    }
+    await expect(client.get('/timeout')).rejects.toMatchObject({
+      code: GuildPassErrorCode.TIMEOUT,
+    });
+  });
+
+  describe('retry', () => {
+    it('retries a GET on a retryable status and succeeds', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, {
+        maxRetries: 2,
+        baseDelayMs: 0,
+      });
+
+      (fetch as any)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          headers: new Headers(),
+          json: () => Promise.resolve(null),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: () => Promise.resolve({ ok: true }),
+        });
+
+      const result = await retryClient.get('/flaky');
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('throws after exhausting all retries', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, {
+        maxRetries: 2,
+        baseDelayMs: 0,
+      });
+
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 503,
+        headers: new Headers(),
+        json: () => Promise.resolve(null),
+      });
+
+      await expect(retryClient.get('/always-down')).rejects.toMatchObject({
+        code: GuildPassErrorCode.HTTP_ERROR,
+        status: 503,
+      });
+      expect(fetch).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    });
+
+    it('does not retry non-retryable status codes (404)', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, { maxRetries: 2 });
+
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        json: () => Promise.resolve(null),
+      });
+
+      await expect(retryClient.get('/missing')).rejects.toMatchObject({
+        code: GuildPassErrorCode.NOT_FOUND,
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry POST by default', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, {
+        maxRetries: 2,
+        baseDelayMs: 0,
+      });
+
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 503,
+        headers: new Headers(),
+        json: () => Promise.resolve(null),
+      });
+
+      await expect(retryClient.post('/create', {})).rejects.toBeDefined();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries POST when allowMutatingRetry is set per-request', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, { baseDelayMs: 0 });
+
+      (fetch as any)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          headers: new Headers(),
+          json: () => Promise.resolve(null),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          headers: new Headers(),
+          json: () => Promise.resolve({ id: 1 }),
+        });
+
+      const result = await retryClient.post('/idempotent-create', {}, {
+        retry: { maxRetries: 1, allowMutatingRetry: true, baseDelayMs: 0 },
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ id: 1 });
+    });
+
+    it('respects Retry-After header on 429', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, {
+        maxRetries: 1,
+        baseDelayMs: 1000,
+      });
+
+      // Retry-After: 0 means retry immediately — avoids real timer waits in tests.
+      (fetch as any)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          headers: new Headers({ 'Retry-After': '0' }),
+          json: () => Promise.resolve(null),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: () => Promise.resolve({ ok: true }),
+        });
+
+      const result = await retryClient.get('/rate-limited');
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('per-request retry config overrides global config', async () => {
+      const retryClient = new HttpClient(baseUrl, undefined, 10000, {
+        maxRetries: 3,
+        baseDelayMs: 0,
+      });
+
+      (fetch as any).mockResolvedValue({
+        ok: false,
+        status: 503,
+        headers: new Headers(),
+        json: () => Promise.resolve(null),
+      });
+
+      // Per-request maxRetries=1 overrides global maxRetries=3
+      await expect(
+        retryClient.get('/flaky', { retry: { maxRetries: 1 } }),
+      ).rejects.toBeDefined();
+      expect(fetch).toHaveBeenCalledTimes(2); // 1 initial + 1 retry
+    });
   });
 });
 

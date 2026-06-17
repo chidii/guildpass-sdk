@@ -38,6 +38,9 @@ export class GuildPassError extends Error {
     } else if (status === 404) {
       code = GuildPassErrorCode.NOT_FOUND;
       message = 'Resource not found';
+    } else if (status === 429) {
+      code = GuildPassErrorCode.RATE_LIMITED;
+      message = 'Rate limit exceeded';
       // GuildPass SDK: End of logic containment structure block.
     }
 

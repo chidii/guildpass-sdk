@@ -78,6 +78,11 @@ const client = new GuildPassClient({
 });
 ```
 
+## Retry Policy
+
+By default the SDK makes a single attempt and throws on failure. You can enable automatic retries with exponential backoff via the `retry` option.
+
+### Global configuration
 ## Observability Hooks
 
 The SDK supports optional request lifecycle hooks so you can integrate calls with logging, metrics, tracing, and debugging tools.
@@ -85,6 +90,38 @@ The SDK supports optional request lifecycle hooks so you can integrate calls wit
 ```typescript
 const client = new GuildPassClient({
   apiUrl: 'https://api.guildpass.xyz',
+  retry: {
+    maxRetries: 3,        // number of retries after the initial attempt
+    baseDelayMs: 200,     // starting backoff delay, doubles each attempt
+    maxDelayMs: 5000,     // backoff ceiling
+    retryableStatuses: [429, 500, 502, 503, 504], // default
+  },
+});
+```
+
+### Per-request override
+
+Pass `retry` inside any request options to override the global policy for that call:
+
+```typescript
+const data = await client.access.checkAccess(params, {
+  retry: { maxRetries: 1 },
+});
+```
+
+### Defaults and safe usage
+
+| Option | Default | Notes |
+| :--- | :--- | :--- |
+| `maxRetries` | `0` | Set to `0` to disable retries entirely. |
+| `baseDelayMs` | `200` | Backoff starts here and doubles each attempt. |
+| `maxDelayMs` | `5000` | Backoff will never exceed this value. |
+| `retryableStatuses` | `[429, 500, 502, 503, 504]` | 4xx errors other than 429 are not retried. |
+| `allowMutatingRetry` | `false` | POST/PUT/PATCH/DELETE are **not** retried unless this is `true`. |
+
+The SDK respects the `Retry-After` response header on 429 responses, waiting the server-specified duration before retrying rather than using the computed backoff.
+
+Non-idempotent methods (POST, PATCH) are never retried unless you explicitly set `allowMutatingRetry: true`. Only enable this when you are certain the operation is safe to repeat.
   hooks: {
     onRequest: ({ method, path }) => {
       console.log('request started', method, path);

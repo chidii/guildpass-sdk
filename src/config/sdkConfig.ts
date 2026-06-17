@@ -2,6 +2,7 @@
 import { HttpHooks } from '../http/http.types';
 import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
+import { RetryConfig } from '../http/http.types';
 
 // GuildPass SDK: Exported component definition.
 export type GuildPassClientConfig = {
@@ -11,6 +12,8 @@ export type GuildPassClientConfig = {
   contractAddress?: string;
   apiKey?: string;
   timeoutMs?: number;
+  /** Global retry policy applied to all requests. Defaults to no retries. */
+  retry?: RetryConfig;
   hooks?: HttpHooks;
   /**
    * When true, service responses are checked against runtime shape guards
