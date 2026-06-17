@@ -3,7 +3,7 @@ import { GuildPassError } from '../errors/GuildPassError';
 // GuildPass SDK: Import external module dependencies.
 import { GuildPassErrorCode } from '../errors/errorCodes';
 // GuildPass SDK: Pull in package or module bindings.
-import { HttpRequestOptions, HttpResponse, RetryConfig } from './http.types';
+import { HttpRequestOptions, HttpResponse, RetryConfig, HttpHooks, RequestHookPayload } from './http.types';
 
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
@@ -32,7 +32,6 @@ function getRetryAfterMs(headers: Headers): number | null {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-import { HttpRequestOptions, HttpResponse, HttpHooks, RequestHookPayload } from './http.types';
 
 // GuildPass SDK: Exposed interface structure.
 export class HttpClient {
@@ -44,22 +43,21 @@ export class HttpClient {
   private readonly timeoutMs: number;
   // GuildPass SDK: Class member structure property or constructor.
   private readonly globalRetry?: RetryConfig;
-
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, retry?: RetryConfig) {
-    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    this.apiKey = apiKey;
-    this.timeoutMs = timeoutMs;
-    this.globalRetry = retry;
   private readonly hooks?: HttpHooks;
 
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, hooks?: HttpHooks) {
+  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, configOrHooks?: RetryConfig | HttpHooks) {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
-    this.hooks = hooks;
-    // GuildPass SDK: End of logic containment structure block.
+
+    // Discriminate between RetryConfig and HttpHooks
+    if (configOrHooks && ('maxRetries' in configOrHooks || 'baseDelayMs' in configOrHooks || 'retryableStatuses' in configOrHooks || 'allowMutatingRetry' in configOrHooks)) {
+      this.globalRetry = configOrHooks as RetryConfig;
+    } else if (configOrHooks && ('onRequest' in configOrHooks || 'onResponse' in configOrHooks || 'onError' in configOrHooks)) {
+      this.hooks = configOrHooks as HttpHooks;
+    }
   }
 
   // GuildPass SDK: Class member structure property or constructor.
@@ -156,91 +154,68 @@ export class HttpClient {
           throw GuildPassError.fromHttpError(response.status, errorData);
         }
 
+        // Success case
         const data = await response.json();
-        return { data, status: response.status, headers: response.headers };
+        const durationMs = Date.now() - startTime;
+
+        if (this.hooks?.onResponse) {
+          try {
+            await this.hooks.onResponse({ ...hookPayload, status: response.status, durationMs });
+          } catch (err) {
+            console.error('GuildPass SDK: onResponse hook failed', err);
+          }
+        }
+
+        return {
+          data,
+          status: response.status,
+          headers: response.headers,
+        };
 
       } catch (error: any) {
         clearTimeout(timeoutId);
 
+        let finalError = error;
+
         if (error.name === 'AbortError') {
-          throw new GuildPassError(
+          finalError = new GuildPassError(
             `Request timed out after ${timeoutMs}ms`,
             GuildPassErrorCode.TIMEOUT,
           );
-        }
+        } else if (!(error instanceof GuildPassError)) {
+          // Network-level errors (fetch rejection) are safe to retry on idempotent methods.
+          if (canRetry && attempt < retryConfig.maxRetries) {
+            const backoff = Math.min(retryConfig.baseDelayMs * 2 ** attempt, retryConfig.maxDelayMs);
+            await delay(backoff);
+            attempt++;
+            continue;
+          }
 
-        if (error instanceof GuildPassError) {
-          throw error;
-        }
-
-        // Network-level errors (fetch rejection) are safe to retry on idempotent methods.
-        if (canRetry && attempt < retryConfig.maxRetries) {
+          finalError = new GuildPassError(
+            error.message || 'Unknown network error',
+            GuildPassErrorCode.HTTP_ERROR,
+            undefined,
+            error,
+          );
+        } else if (canRetry && attempt < retryConfig.maxRetries && retryConfig.retryableStatuses.includes(finalError.status)) {
+          // GuildPassError with retryable status
           const backoff = Math.min(retryConfig.baseDelayMs * 2 ** attempt, retryConfig.maxDelayMs);
           await delay(backoff);
           attempt++;
           continue;
         }
 
-        throw new GuildPassError(
-          error.message || 'Unknown network error',
-          GuildPassErrorCode.HTTP_ERROR,
-          undefined,
-          error,
-        );
-      }
-      // GuildPass SDK: Variable binding initialization.
-      const data = await response.json();
-      const durationMs = Date.now() - startTime;
-
-      if (this.hooks?.onResponse) {
-        try {
-          await this.hooks.onResponse({ ...hookPayload, status: response.status, durationMs });
-        } catch (err) {
-          console.error('GuildPass SDK: onResponse hook failed', err);
+        const durationMs = Date.now() - startTime;
+        if (this.hooks?.onError) {
+          try {
+            await this.hooks.onError({ ...hookPayload, error: finalError, durationMs });
+          } catch (hookErr) {
+            console.error('GuildPass SDK: onError hook failed', hookErr);
+          }
         }
+
+        throw finalError;
       }
-      // GuildPass SDK: Return evaluated output value.
-      return {
-        data,
-        status: response.status,
-        headers: response.headers,
-        // GuildPass SDK: End of logic containment structure block.
-      };
-      // GuildPass SDK: Execution block boundary initialization.
-    } catch (error: any) {
-      clearTimeout(timeoutId);
-
-      const durationMs = Date.now() - startTime;
-      let finalError = error;
-
-      // GuildPass SDK: Verify constraint requirements before proceeding.
-      if (error.name === 'AbortError') {
-        finalError = new GuildPassError(
-          `Request timed out after ${timeoutMs}ms`,
-          GuildPassErrorCode.TIMEOUT,
-        );
-      } else if (!(error instanceof GuildPassError)) {
-        finalError = new GuildPassError(
-          error.message || 'Unknown network error',
-          GuildPassErrorCode.HTTP_ERROR,
-          undefined,
-          error,
-        );
-      }
-
-      // GuildPass SDK: Evaluate branch condition logic.
-      if (this.hooks?.onError) {
-        // GuildPass SDK: Execution block boundary initialization.
-        try {
-          await this.hooks.onError({ ...hookPayload, error: finalError, durationMs });
-        } catch (hookErr) {
-          console.error('GuildPass SDK: onError hook failed', hookErr);
-          // GuildPass SDK: End of logic containment structure block.
-        }
-        // GuildPass SDK: End of logic containment structure block.
-      }
-
-      throw finalError;
     }
   }
 }

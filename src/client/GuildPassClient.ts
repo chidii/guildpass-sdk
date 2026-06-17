@@ -49,12 +49,11 @@ export class GuildPassClient {
       // GuildPass SDK: End of logic containment structure block.
     };
 
-    this.http = new HttpClient(this.config.apiUrl, this.config.apiKey, this.config.timeoutMs, this.config.retry);
     this.http = new HttpClient(
       this.config.apiUrl,
       this.config.apiKey,
       this.config.timeoutMs,
-      this.config.hooks,
+      this.config.retry || this.config.hooks,
     );
 
     const validateResponses = this.config.validateResponses ?? false;

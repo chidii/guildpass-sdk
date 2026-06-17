@@ -73,6 +73,49 @@ describe('HttpClient', () => {
     });
   });
 
+  it('should surface API-provided message for 400 and 409', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ message: 'Invalid payload' }),
+        headers: new Headers(),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ code: 'ALREADY_EXISTS', message: 'Conflict occurred' }),
+        headers: new Headers(),
+      });
+
+    await expect(client.get('/bad-request')).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_INPUT,
+      status: 400,
+      message: 'Invalid payload',
+    });
+
+    await expect(client.get('/conflict')).rejects.toMatchObject({
+      code: GuildPassErrorCode.CONFLICT,
+      status: 409,
+      message: 'Conflict occurred',
+    });
+  });
+
+  it('should combine messages from errors array', async () => {
+    (fetch as any).mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve({ errors: [{ message: 'Name is required' }, { message: 'Email invalid' }] }),
+      headers: new Headers(),
+    });
+
+    await expect(client.get('/validate')).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_INPUT,
+      status: 422,
+      message: 'Name is required; Email invalid',
+    });
+  });
+
   it('should throw TIMEOUT error on abort', async () => {
     (fetch as any).mockImplementation(() => {
       const error = new Error('AbortError');
@@ -126,7 +169,7 @@ describe('HttpClient', () => {
       });
 
       await expect(retryClient.get('/always-down')).rejects.toMatchObject({
-        code: GuildPassErrorCode.HTTP_ERROR,
+        code: GuildPassErrorCode.SERVER_ERROR,
         status: 503,
       });
       expect(fetch).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
