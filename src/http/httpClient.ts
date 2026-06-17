@@ -32,6 +32,7 @@ function getRetryAfterMs(headers: Headers): number | null {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+import { HttpRequestOptions, HttpResponse, HttpHooks, RequestHookPayload } from './http.types';
 
 // GuildPass SDK: Exposed interface structure.
 export class HttpClient {
@@ -50,6 +51,15 @@ export class HttpClient {
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
     this.globalRetry = retry;
+  private readonly hooks?: HttpHooks;
+
+  // GuildPass SDK: Class member structure property or constructor.
+  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, hooks?: HttpHooks) {
+    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    this.apiKey = apiKey;
+    this.timeoutMs = timeoutMs;
+    this.hooks = hooks;
+    // GuildPass SDK: End of logic containment structure block.
   }
 
   // GuildPass SDK: Class member structure property or constructor.
@@ -83,6 +93,19 @@ export class HttpClient {
       retryConfig.maxRetries > 0 &&
       (IDEMPOTENT_METHODS.has(method) || retryConfig.allowMutatingRetry);
 
+    // GuildPass SDK: Variable binding initialization.
+    const startTime = Date.now();
+    const hookPayload: RequestHookPayload = { method, path };
+
+    if (this.hooks?.onRequest) {
+      try {
+        await this.hooks.onRequest(hookPayload);
+      } catch (err) {
+        console.error('GuildPass SDK: onRequest hook failed', err);
+      }
+    }
+
+    // GuildPass SDK: Variable binding initialization.
     const url = new URL(`${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`);
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -165,6 +188,59 @@ export class HttpClient {
           error,
         );
       }
+      // GuildPass SDK: Variable binding initialization.
+      const data = await response.json();
+      const durationMs = Date.now() - startTime;
+
+      if (this.hooks?.onResponse) {
+        try {
+          await this.hooks.onResponse({ ...hookPayload, status: response.status, durationMs });
+        } catch (err) {
+          console.error('GuildPass SDK: onResponse hook failed', err);
+        }
+      }
+      // GuildPass SDK: Return evaluated output value.
+      return {
+        data,
+        status: response.status,
+        headers: response.headers,
+        // GuildPass SDK: End of logic containment structure block.
+      };
+      // GuildPass SDK: Execution block boundary initialization.
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+
+      const durationMs = Date.now() - startTime;
+      let finalError = error;
+
+      // GuildPass SDK: Verify constraint requirements before proceeding.
+      if (error.name === 'AbortError') {
+        finalError = new GuildPassError(
+          `Request timed out after ${timeoutMs}ms`,
+          GuildPassErrorCode.TIMEOUT,
+        );
+      } else if (!(error instanceof GuildPassError)) {
+        finalError = new GuildPassError(
+          error.message || 'Unknown network error',
+          GuildPassErrorCode.HTTP_ERROR,
+          undefined,
+          error,
+        );
+      }
+
+      // GuildPass SDK: Evaluate branch condition logic.
+      if (this.hooks?.onError) {
+        // GuildPass SDK: Execution block boundary initialization.
+        try {
+          await this.hooks.onError({ ...hookPayload, error: finalError, durationMs });
+        } catch (hookErr) {
+          console.error('GuildPass SDK: onError hook failed', hookErr);
+          // GuildPass SDK: End of logic containment structure block.
+        }
+        // GuildPass SDK: End of logic containment structure block.
+      }
+
+      throw finalError;
     }
   }
 }

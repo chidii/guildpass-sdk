@@ -23,6 +23,9 @@ try {
       case GuildPassErrorCode.TIMEOUT:
         // Handle network timeout
         break;
+      case GuildPassErrorCode.INVALID_RESPONSE:
+        // Handle a malformed API response (only thrown when validateResponses is enabled)
+        break;
     }
   }
 }
@@ -38,14 +41,30 @@ The SDK works in Node.js 18+. If you are on an older version, you may need to po
 
 The SDK is tree-shakeable and optimized for modern browsers. It does not include any Node-only dependencies.
 
-## Address Normalization
+## Address Normalization and Checksums
 
-The SDK automatically normalizes addresses to lowercase for consistency. You can also use the exported utility:
+The SDK automatically normalizes addresses to lowercase for consistency and accepts both lowercase and mixed-case addresses by default.
+You can also use the exported utilities to format or strictly validate EIP-55 checksum addresses:
 
 ```typescript
-import { normaliseAddress } from '@guildpass/sdk';
+import {
+  normaliseAddress,
+  toChecksumAddress,
+  isChecksumAddress,
+  validateAddress,
+} from '@guildpass/sdk';
 
-const clean = normaliseAddress('0xABC...');
+// Convert to lowercase
+const clean = normaliseAddress('0xabc...');
+
+// Convert to EIP-55 Checksum
+const checksummed = toChecksumAddress('0xabc...');
+
+// Check if an address has a valid checksum
+const isValid = isChecksumAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'); // true
+
+// Strict validation mode (throws if checksum is invalid)
+validateAddress('0xd8da...', { strict: true });
 ```
 
 ## Timeouts
@@ -64,6 +83,9 @@ const client = new GuildPassClient({
 By default the SDK makes a single attempt and throws on failure. You can enable automatic retries with exponential backoff via the `retry` option.
 
 ### Global configuration
+## Observability Hooks
+
+The SDK supports optional request lifecycle hooks so you can integrate calls with logging, metrics, tracing, and debugging tools.
 
 ```typescript
 const client = new GuildPassClient({
@@ -100,3 +122,18 @@ const data = await client.access.checkAccess(params, {
 The SDK respects the `Retry-After` response header on 429 responses, waiting the server-specified duration before retrying rather than using the computed backoff.
 
 Non-idempotent methods (POST, PATCH) are never retried unless you explicitly set `allowMutatingRetry: true`. Only enable this when you are certain the operation is safe to repeat.
+  hooks: {
+    onRequest: ({ method, path }) => {
+      console.log('request started', method, path);
+    },
+    onResponse: ({ method, path, status, durationMs }) => {
+      console.log('request succeeded', method, path, status, durationMs);
+    },
+    onError: ({ method, path, error, durationMs }) => {
+      console.error('request failed', method, path, error.message, durationMs);
+    },
+  },
+});
+```
+
+Hook payloads expose safe request metadata only. Sensitive values like the API key and full request body are not included in hook payloads, and hook failures are logged without changing the normal SDK response behavior.

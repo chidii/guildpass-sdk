@@ -9,6 +9,7 @@ export enum GuildPassErrorCode {
   UNAUTHORISED = 'UNAUTHORISED',
   RATE_LIMITED = 'RATE_LIMITED',
   NOT_IMPLEMENTED = 'NOT_IMPLEMENTED',
+  INVALID_RESPONSE = 'INVALID_RESPONSE',
   UNKNOWN_ERROR = 'UNKNOWN_ERROR',
   // GuildPass SDK: End of logic containment structure block.
 }

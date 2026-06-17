@@ -3,13 +3,18 @@ import { HttpClient } from '../http/httpClient';
 // GuildPass SDK: Pull in package or module bindings.
 import { validateGuildId } from '../utils/validation';
 import { encodePathSegment } from '../utils/formatting';
+import { assertValidResponse } from '../validation/assertResponse';
+import { isGuild, isGuildConfig } from '../validation/responseGuards';
 // GuildPass SDK: Import external module dependencies.
 import { GetGuildParams, Guild, GuildConfig } from './guilds.types';
 
 // GuildPass SDK: Core operational type definition.
 export class GuildsService {
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(private readonly http: HttpClient) {}
+  constructor(
+    private readonly http: HttpClient,
+    private readonly validateResponses = false,
+  ) {}
 
   /**
    * Fetches basic guild information.
@@ -21,7 +26,8 @@ export class GuildsService {
     validateGuildId(guildId);
 
     // GuildPass SDK: Send back computed results to the caller.
-    return this.http.get<Guild>(`/guilds/${encodePathSegment(guildId)}`);
+    const result = await this.http.get<Guild>(`/guilds/${encodePathSegment(guildId)}`);
+    return this.validateResponses ? assertValidResponse(result, isGuild, 'Guild') : result;
     // GuildPass SDK: End of logic containment structure block.
   }
 
@@ -35,7 +41,10 @@ export class GuildsService {
     validateGuildId(guildId);
 
     // GuildPass SDK: Return evaluated output value.
-    return this.http.get<GuildConfig>(`/guilds/${encodePathSegment(guildId)}/config`);
+    const result = await this.http.get<GuildConfig>(`/guilds/${encodePathSegment(guildId)}/config`);
+    return this.validateResponses
+      ? assertValidResponse(result, isGuildConfig, 'GuildConfig')
+      : result;
     // GuildPass SDK: End of logic containment structure block.
   }
   // GuildPass SDK: End of logic containment structure block.
