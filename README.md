@@ -1,6 +1,6 @@
 <div align="center">
   <a href="./README.md">
-    <img src="https://raw.githubusercontent.com/guildpass/brand/main/logo.png" alt="GuildPass Logo" width="120" />
+    <img src="./logo/Guidlpass SDK Logo.png" alt="GuildPass Logo" width="120" />
   </a>
   <h1>GuildPass SDK</h1>
   <p><strong>The official TypeScript SDK for the GuildPass protocol.</strong></p>
