@@ -161,6 +161,12 @@ export class HttpClient {
       throw new GuildPassError('Request aborted', GuildPassErrorCode.ABORTED);
     }
 
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      ...headers,
+    };
+
     // GuildPass SDK: Variable binding initialization.
     const startTime = Date.now();
     const hookPayload: RequestHookPayload = { 

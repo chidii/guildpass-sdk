@@ -84,13 +84,13 @@ if (result.hasAccess) {
 
 The SDK is organized into focused service modules accessible via the main client:
 
-| Module              | Purpose                                              |
-| :------------------ | :--------------------------------------------------- |
-| `client.access`     | Handle resource gating and role-based access checks. |
-| `client.membership` | Query wallet membership status and join dates.       |
-| `client.roles`      | Retrieve available roles and user assignments.       |
-| `client.guilds`     | Fetch guild metadata, themes, and social links.      |
-| `client.contracts`  | Resolve chain config and read guild owner addresses. |
+| Module              | Purpose                                                        |
+| :------------------ | :------------------------------------------------------------- |
+| `client.access`     | Handle resource gating and role-based access checks.           |
+| `client.membership` | Query wallet membership status and join dates.                 |
+| `client.roles`      | Retrieve available roles and user assignments.                 |
+| `client.guilds`     | Fetch guild metadata, themes, and social links.                |
+| `client.contracts`  | Resolve chain config and read on-chain GuildPass contract data. |
 
 ## ⚙️ Configuration
 
@@ -178,6 +178,25 @@ await client.invalidateWalletCache('0x1234...5678');
 // Full wipe.
 await client.clearCache();
 ```
+
+### Membership token balances
+
+Configure `rpcUrl` and `contractAddress` to query the configured membership token:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  rpcUrl: 'https://mainnet.base.org',
+  contractAddress: '0x0000000000000000000000000000000000000000',
+});
+
+const balance = await client.contracts.getMembershipTokenBalance({
+  walletAddress: '0x1234567890123456789012345678901234567890',
+});
+```
+
+The lookup uses an `eth_call` against `balanceOf(address)` and returns the raw
+token balance as a decimal string.
 
 ## 📚 Documentation
 

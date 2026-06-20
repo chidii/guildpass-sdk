@@ -10,6 +10,7 @@ export type ChainConfig = {
 // GuildPass SDK: Exposed interface structure.
 export type TokenBalanceParams = {
   walletAddress: string;
+  chainId?: number;
   contractAddress?: string;
   // GuildPass SDK: End of logic containment structure block.
 };

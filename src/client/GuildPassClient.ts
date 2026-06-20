@@ -105,7 +105,7 @@ export class GuildPassClient {
     this.membership = this.cache ? this.buildCachedMembershipService(rawMembership) : rawMembership;
     this.roles = this.cache ? this.buildCachedRolesService(rawRoles) : rawRoles;
     this.guilds = this.cache ? this.buildCachedGuildsService(rawGuilds) : rawGuilds;
-    this.contracts = new ContractClient(this.config.rpcUrl, this.config.contractAddress);
+    this.contracts = new ContractClient(this.config);
     // GuildPass SDK: End of logic containment structure block.
   }
 

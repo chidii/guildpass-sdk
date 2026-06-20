@@ -11,6 +11,7 @@ import { validateRoleRequirementStub } from './contractHelpers';
 import { GuildPassClientConfig, resolveChainConfig } from '../config/sdkConfig';
 
 const GET_GUILD_OWNER_SELECTOR = '0xab4511dc';
+const BALANCE_OF_SELECTOR = '0x70a08231';
 const HEX_32_BYTES_LENGTH = 64;
 
 type JsonRpcSuccess = {
@@ -69,6 +70,21 @@ const decodeAddressResult = (result: unknown): string => {
   return address;
 };
 
+const encodeAddressArgument = (address: string): string => {
+  return address.slice(2).toLowerCase().padStart(64, '0');
+};
+
+const decodeUint256Result = (result: unknown): string => {
+  if (typeof result !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(result)) {
+    throw new GuildPassError(
+      'Invalid getMembershipTokenBalance RPC response',
+      GuildPassErrorCode.INVALID_RESPONSE,
+    );
+  }
+
+  return BigInt(result).toString(10);
+};
+
 // GuildPass SDK: Exported function execution unit.
 export class ContractClient {
   // GuildPass SDK: Class member structure property or constructor.
@@ -94,22 +110,77 @@ export class ContractClient {
 
   /**
    * Fetches the membership token balance for a wallet.
-   * Stub for future on-chain support.
    */
   // GuildPass SDK: Class member structure property or constructor.
   public async getMembershipTokenBalance(params: TokenBalanceParams): Promise<string> {
     // GuildPass SDK: Variable binding initialization.
-    const { walletAddress, contractAddress = this.config.contractAddress } = params;
+    const { walletAddress, chainId } = params;
+    const chainConfig = this.getChainConfig(chainId);
+    const contractAddress = params.contractAddress ?? chainConfig.contractAddress;
 
     validateAddress(walletAddress);
-    // GuildPass SDK: Evaluate branch condition logic.
-    if (contractAddress) validateAddress(contractAddress);
 
-    // GuildPass SDK: Raise exceptional condition and throw error.
-    throw new GuildPassError(
-      'getMembershipTokenBalance is not yet implemented. Requires on-chain provider.',
-      GuildPassErrorCode.NOT_IMPLEMENTED,
-    );
+    if (!chainConfig.rpcUrl) {
+      throw new GuildPassError(
+        'rpcUrl is required for contract calls',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (!contractAddress) {
+      throw new GuildPassError(
+        'contractAddress is required for token balance lookup',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    validateAddress(contractAddress);
+
+    let response: Response;
+    try {
+      response = await fetch(chainConfig.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_call',
+          params: [
+            {
+              to: contractAddress,
+              data: `${BALANCE_OF_SELECTOR}${encodeAddressArgument(walletAddress)}`,
+            },
+            'latest',
+          ],
+        }),
+      });
+    } catch (error) {
+      throw new GuildPassError(
+        'Unable to reach configured RPC provider',
+        GuildPassErrorCode.HTTP_ERROR,
+        undefined,
+        error,
+      );
+    }
+
+    const payload = (await response.json().catch(() => undefined)) as
+      | (JsonRpcSuccess & JsonRpcError)
+      | undefined;
+
+    if (!response.ok) {
+      throw GuildPassError.fromHttpError(response.status, payload);
+    }
+
+    if (payload?.error) {
+      throw new GuildPassError(
+        payload.error.message ?? 'RPC provider returned an error',
+        GuildPassErrorCode.HTTP_ERROR,
+        undefined,
+        payload.error,
+      );
+    }
+
+    return decodeUint256Result(payload?.result);
     // GuildPass SDK: End of logic containment structure block.
   }
 

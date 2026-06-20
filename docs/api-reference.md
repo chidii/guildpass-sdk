@@ -116,6 +116,24 @@ await client.contracts.getGuildOwner({
 - **Guild ID encoding**: accepts a 32-byte hex value, unsigned integer string, or UTF-8 string up to 32 bytes
 - **Errors**: throws `INVALID_CONFIG` for missing RPC/contract config, `INVALID_INPUT` for invalid guild IDs, `INVALID_ADDRESS` for invalid contract addresses, `HTTP_ERROR` for RPC failures, and `INVALID_RESPONSE` for malformed RPC return data
 
+### `getMembershipTokenBalance(params: TokenBalanceParams)`
+
+Fetches the raw membership token balance for a wallet through the configured
+JSON-RPC provider and contract address.
+
+```typescript
+await client.contracts.getMembershipTokenBalance({
+  walletAddress: '0x1234567890123456789012345678901234567890',
+  chainId: 8453, // optional chain override
+  contractAddress: '0x0000000000000000000000000000000000000000', // optional contract override
+});
+```
+
+- **Returns**: `Promise<string>`
+- **Requires**: `rpcUrl` and either `contractAddress` in client config or a per-call override
+- **Contract call**: `eth_call` to `balanceOf(address)`
+- **Errors**: throws `INVALID_CONFIG` for missing RPC/contract config, `INVALID_ADDRESS` for invalid wallet or contract addresses, `HTTP_ERROR` for RPC failures, and `INVALID_RESPONSE` for malformed RPC return data
+
 ---
 
 ## Response Validation
