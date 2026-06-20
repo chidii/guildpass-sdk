@@ -27,19 +27,19 @@ new GuildPassClient(config: GuildPassClientConfig)
 
 ## Access Module (`client.access`)
 
-### `checkAccess(params: AccessCheckParams)`
+### `checkAccess(params: AccessCheckParams, options?: RequestOptions)`
 
 Checks if a wallet can access a resource.
 
 - **Returns**: `Promise<AccessCheckResult>`
 
-### `checkAccessBatch(items: AccessCheckParams[], options?: AccessCheckBatchOptions)`
+### `checkAccessBatch(items: AccessCheckParams[], options?: AccessCheckBatchOptions & RequestOptions)`
 
 Checks access for multiple resources or wallets concurrently.
 
 - **Returns**: `Promise<AccessCheckBatchResult[]>`
 
-### `checkRoleAccess(params: RoleAccessCheckParams)`
+### `checkRoleAccess(params: RoleAccessCheckParams, options?: RequestOptions)`
 
 Checks if a wallet has a specific role.
 
@@ -49,13 +49,13 @@ Checks if a wallet has a specific role.
 
 ## Membership Module (`client.membership`)
 
-### `getMembership(params: MembershipParams)`
+### `getMembership(params: MembershipParams, options?: RequestOptions)`
 
 Fetches detailed membership status.
 
 - **Returns**: `Promise<Membership>`
 
-### `isMember(params: MembershipParams)`
+### `isMember(params: MembershipParams, options?: RequestOptions)`
 
 Quick check for active membership.
 
@@ -65,13 +65,13 @@ Quick check for active membership.
 
 ## Roles Module (`client.roles`)
 
-### `getRoles(params: GetRolesParams)`
+### `getRoles(params: GetRolesParams, options?: RequestOptions)`
 
 Fetches all roles for a guild.
 
 - **Returns**: `Promise<GuildRole[]>`
 
-### `getUserRoles(params: GetUserRolesParams)`
+### `getUserRoles(params: GetUserRolesParams, options?: RequestOptions)`
 
 Fetches roles assigned to a user.
 
@@ -81,13 +81,13 @@ Fetches roles assigned to a user.
 
 ## Guilds Module (`client.guilds`)
 
-### `getGuild(params: GetGuildParams)`
+### `getGuild(params: GetGuildParams, options?: RequestOptions)`
 
 Fetches basic guild metadata.
 
 - **Returns**: `Promise<Guild>`
 
-### `getGuildConfig(params: GetGuildParams)`
+### `getGuildConfig(params: GetGuildParams, options?: RequestOptions)`
 
 Fetches full guild configuration.
 
