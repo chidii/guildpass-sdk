@@ -53,7 +53,11 @@ export class GuildPassClient {
       this.config.apiUrl,
       this.config.apiKey,
       this.config.timeoutMs,
-      this.config.retry || this.config.hooks,
+      {
+        retry: this.config.retry,
+        hooks: this.config.hooks,
+        fetch: this.config.fetch,
+      },
     );
 
     const validateResponses = this.config.validateResponses ?? false;

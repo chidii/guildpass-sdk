@@ -17,6 +17,17 @@ export type RetryConfig = {
   allowMutatingRetry?: boolean;
 };
 
+export type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export type HttpClientConfig = {
+  retry?: RetryConfig;
+  hooks?: HttpHooks;
+  fetch?: FetchLike;
+};
+
 // GuildPass SDK: Exported function execution unit.
 export type HttpRequestOptions = {
   method?: HttpMethod;

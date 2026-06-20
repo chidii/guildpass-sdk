@@ -40,6 +40,44 @@ describe('HttpClient', () => {
     );
   });
 
+  it('should use injected fetch transport without stubbing global fetch', async () => {
+    const injectedFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ via: 'custom-transport' }),
+      headers: new Headers(),
+    });
+    const globalFetch = vi.fn();
+    vi.stubGlobal('fetch', globalFetch);
+    const transportClient = new HttpClient(baseUrl, undefined, 10000, {
+      fetch: injectedFetch,
+    });
+
+    const result = await transportClient.get('/custom-fetch');
+
+    expect(result).toEqual({ via: 'custom-transport' });
+    expect(injectedFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/custom-fetch'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+
+  it('should throw a clear config error when no fetch transport is available', async () => {
+    vi.unstubAllGlobals();
+    const originalFetch = globalThis.fetch;
+
+    try {
+      vi.stubGlobal('fetch', undefined);
+      const noFetchClient = new HttpClient(baseUrl);
+      await expect(noFetchClient.get('/missing-fetch')).rejects.toThrow(
+        'A fetch-compatible transport is required.',
+      );
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  });
+
   it('should include API key in headers if provided', async () => {
     const clientWithKey = new HttpClient(baseUrl, 'secret-key');
     (fetch as any).mockResolvedValue({

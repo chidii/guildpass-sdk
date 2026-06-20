@@ -82,3 +82,31 @@ results.forEach((result) => {
   }
 });
 ```
+
+## 5. Custom Fetch Transport
+
+Use the `fetch` config option when you need a runtime-specific transport,
+request tracing, proxy routing, or tests that should not stub `globalThis.fetch`.
+The function must be fetch-compatible and return a `Response`.
+
+```typescript
+import { GuildPassClient } from '@guildpass/sdk';
+
+const tracedFetch: typeof fetch = async (input, init) => {
+  const startedAt = Date.now();
+  const response = await fetch(input, init);
+
+  console.log('guildpass request', {
+    input,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
+
+  return response;
+};
+
+const client = new GuildPassClient({
+  apiUrl: process.env.GUILDPASS_API,
+  fetch: tracedFetch,
+});
+```

@@ -3,7 +3,15 @@ import { GuildPassError } from '../errors/GuildPassError';
 // GuildPass SDK: Import external module dependencies.
 import { GuildPassErrorCode } from '../errors/errorCodes';
 // GuildPass SDK: Pull in package or module bindings.
-import { HttpRequestOptions, HttpResponse, RetryConfig, HttpHooks, RequestHookPayload } from './http.types';
+import {
+  FetchLike,
+  HttpClientConfig,
+  HttpHooks,
+  HttpRequestOptions,
+  HttpResponse,
+  RequestHookPayload,
+  RetryConfig,
+} from './http.types';
 
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
@@ -37,6 +45,17 @@ function isEmptyJsonBodyError(error: unknown): boolean {
   return error instanceof SyntaxError && /unexpected end of json input/i.test(error.message);
 }
 
+function isRetryConfig(config: RetryConfig | HttpHooks | HttpClientConfig): config is RetryConfig {
+  return 'maxRetries' in config ||
+    'baseDelayMs' in config ||
+    'retryableStatuses' in config ||
+    'allowMutatingRetry' in config;
+}
+
+function isHooksConfig(config: RetryConfig | HttpHooks | HttpClientConfig): config is HttpHooks {
+  return 'onRequest' in config || 'onResponse' in config || 'onError' in config;
+}
+
 async function parseSuccessResponse<T>(response: Response): Promise<T> {
   if (response.status === 204 || response.status === 205 || response.headers.get('Content-Length') === '0') {
     return undefined as T;
@@ -64,18 +83,30 @@ export class HttpClient {
   private readonly globalRetry?: RetryConfig;
   // GuildPass SDK: Class member structure property or constructor.
   private readonly hooks?: HttpHooks;
+  private readonly fetchTransport?: FetchLike;
 
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, configOrHooks?: RetryConfig | HttpHooks) {
+  constructor(
+    baseUrl: string,
+    apiKey?: string,
+    timeoutMs = 10000,
+    configOrHooks?: RetryConfig | HttpHooks | HttpClientConfig,
+  ) {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
 
     // Discriminate between RetryConfig and HttpHooks
-    if (configOrHooks && ('maxRetries' in configOrHooks || 'baseDelayMs' in configOrHooks || 'retryableStatuses' in configOrHooks || 'allowMutatingRetry' in configOrHooks)) {
-      this.globalRetry = configOrHooks as RetryConfig;
-    } else if (configOrHooks && ('onRequest' in configOrHooks || 'onResponse' in configOrHooks || 'onError' in configOrHooks)) {
-      this.hooks = configOrHooks as HttpHooks;
+    if (configOrHooks) {
+      if ('fetch' in configOrHooks || 'retry' in configOrHooks || 'hooks' in configOrHooks) {
+        this.globalRetry = configOrHooks.retry;
+        this.hooks = configOrHooks.hooks;
+        this.fetchTransport = configOrHooks.fetch;
+      } else if (isRetryConfig(configOrHooks)) {
+        this.globalRetry = configOrHooks;
+      } else if (isHooksConfig(configOrHooks)) {
+        this.hooks = configOrHooks;
+      }
     }
   }
 
@@ -145,7 +176,15 @@ export class HttpClient {
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const response = await fetch(url.toString(), {
+        const transport = this.fetchTransport ?? globalThis.fetch;
+        if (typeof transport !== 'function') {
+          throw new GuildPassError(
+            'A fetch-compatible transport is required.',
+            GuildPassErrorCode.INVALID_CONFIG,
+          );
+        }
+
+        const response = await transport(url.toString(), {
           method,
           headers: requestHeaders,
           body: body ? JSON.stringify(body) : undefined,

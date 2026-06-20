@@ -1,5 +1,5 @@
 // GuildPass SDK: Import external module dependencies.
-import { HttpHooks } from '../http/http.types';
+import { FetchLike, HttpHooks } from '../http/http.types';
 import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
 import { RetryConfig } from '../http/http.types';
@@ -15,6 +15,11 @@ export type GuildPassClientConfig = {
   /** Global retry policy applied to all requests. Defaults to no retries. */
   retry?: RetryConfig;
   hooks?: HttpHooks;
+  /**
+   * Optional fetch-compatible transport for tests, tracing, proxies,
+   * custom runtimes, or environments without globalThis.fetch.
+   */
+  fetch?: FetchLike;
   /**
    * When true, service responses are checked against runtime shape guards
    * before being returned, throwing a GuildPassError with code
@@ -46,6 +51,13 @@ export function validateConfig(config: GuildPassClientConfig): void {
   ) {
     throw new GuildPassError(
       'timeoutMs must be a positive number',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+  const transport = config.fetch ?? globalThis.fetch;
+  if (typeof transport !== 'function') {
+    throw new GuildPassError(
+      'A fetch-compatible transport is required. Provide config.fetch or use a runtime with globalThis.fetch.',
       GuildPassErrorCode.INVALID_CONFIG,
     );
   }
