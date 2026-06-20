@@ -67,7 +67,48 @@ const isValid = isChecksumAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
 validateAddress('0xd8da...', { strict: true });
 ```
 
-## Timeouts
+## Multi-Chain Configuration
+
+To support multiple GuildPass deployments across different networks, pass a `chains` map keyed by chain ID. Each entry can specify an `rpcUrl` and `contractAddress` for that chain.
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  chainId: 8453, // default chain
+  chains: {
+    1: {
+      rpcUrl: 'https://eth-mainnet.example.com',
+      contractAddress: '0xYourEthContract',
+    },
+    8453: {
+      rpcUrl: 'https://base-mainnet.example.com',
+      contractAddress: '0xYourBaseContract',
+    },
+    137: {
+      rpcUrl: 'https://polygon-mainnet.example.com',
+      contractAddress: '0xYourPolygonContract',
+    },
+  },
+});
+
+// Resolve config for a specific chain
+const baseConfig = client.contracts.getChainConfig(8453);
+// { rpcUrl: 'https://base-mainnet.example.com', contractAddress: '0xYourBaseContract' }
+
+// Calling without an argument uses the client's default chainId
+const defaultConfig = client.contracts.getChainConfig();
+```
+
+When a `chains` map is provided, requesting an unlisted chain ID throws a `GuildPassError` with code `INVALID_CONFIG`:
+
+```typescript
+// throws: No configuration found for chain ID 42161
+client.contracts.getChainConfig(42161);
+```
+
+The existing single-chain config (`rpcUrl` + `contractAddress` at the top level) remains fully backwards-compatible and is used as a fallback when no `chains` map is set.
+
+
 
 The default timeout is 10 seconds. You can override this globally or per request (in future versions):
 

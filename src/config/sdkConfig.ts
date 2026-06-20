@@ -3,6 +3,7 @@ import { HttpHooks } from '../http/http.types';
 import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
 import { RetryConfig } from '../http/http.types';
+import { ChainConfig } from '../contracts/contract.types';
 
 // GuildPass SDK: Exported component definition.
 export type GuildPassClientConfig = {
@@ -10,6 +11,8 @@ export type GuildPassClientConfig = {
   chainId?: number;
   rpcUrl?: string;
   contractAddress?: string;
+  /** Per-chain RPC URL and contract address overrides, keyed by chain ID. */
+  chains?: Record<number, ChainConfig>;
   apiKey?: string;
   timeoutMs?: number;
   /** Global retry policy applied to all requests. Defaults to no retries. */
@@ -49,4 +52,24 @@ export function validateConfig(config: GuildPassClientConfig): void {
       GuildPassErrorCode.INVALID_CONFIG,
     );
   }
+}
+
+/**
+ * Resolves the chain configuration for a given chain ID.
+ * Per-chain entries in `config.chains` take precedence over the top-level
+ * `rpcUrl` / `contractAddress` fallbacks.
+ * Throws `INVALID_CONFIG` only when a `chains` map is provided but does not
+ * contain an entry for the requested chain.
+ */
+export function resolveChainConfig(config: GuildPassClientConfig, chainId: number): ChainConfig {
+  if (config.chains) {
+    if (Object.prototype.hasOwnProperty.call(config.chains, chainId)) {
+      return config.chains[chainId];
+    }
+    throw new GuildPassError(
+      `No configuration found for chain ID ${chainId}`,
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+  return { rpcUrl: config.rpcUrl, contractAddress: config.contractAddress };
 }

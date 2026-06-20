@@ -61,7 +61,7 @@ export class GuildPassClient {
     this.membership = new MembershipService(this.http, validateResponses);
     this.roles = new RolesService(this.http, validateResponses);
     this.guilds = new GuildsService(this.http, validateResponses);
-    this.contracts = new ContractClient(this.config.rpcUrl, this.config.contractAddress);
+    this.contracts = new ContractClient(this.config);
     // GuildPass SDK: End of logic containment structure block.
   }
 
