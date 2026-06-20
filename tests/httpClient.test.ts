@@ -59,6 +59,44 @@ describe('HttpClient', () => {
     );
   });
 
+  it('should return undefined for 204 No Content responses', async () => {
+    const json = vi.fn(() => Promise.reject(new SyntaxError('Unexpected end of JSON input')));
+    (fetch as any).mockResolvedValue({
+      ok: true,
+      status: 204,
+      json,
+      headers: new Headers(),
+    });
+
+    await expect(client.get('/empty')).resolves.toBeUndefined();
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it('should return undefined for successful responses with explicit empty body metadata', async () => {
+    const json = vi.fn(() => Promise.reject(new SyntaxError('Unexpected end of JSON input')));
+    (fetch as any).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json,
+      headers: new Headers({ 'Content-Length': '0' }),
+    });
+
+    await expect(client.get('/empty-with-length')).resolves.toBeUndefined();
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it('should still return parsed data for JSON responses', async () => {
+    const mockResponse = { ok: true };
+    (fetch as any).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+    });
+
+    await expect(client.get('/json')).resolves.toEqual(mockResponse);
+  });
+
   it('should throw GuildPassError on non-ok response', async () => {
     (fetch as any).mockResolvedValue({
       ok: false,
