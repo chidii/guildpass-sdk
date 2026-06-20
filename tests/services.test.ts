@@ -214,6 +214,28 @@ describe('Service Modules', () => {
       );
     });
 
+    it('should fetch roles for a wallet in a guild', async () => {
+      const mockRoles = [{ id: '1', name: 'Role 1' }];
+      const validAddress = '0x1234567890123456789012345678901234567890';
+      (fetch as any).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockRoles),
+        headers: new Headers(),
+      });
+
+      const result = await client.roles.getUserRoles({
+        guildId: 'guild_1',
+        walletAddress: validAddress,
+      });
+
+      expect(result).toEqual(mockRoles);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/guilds/guild_1/members/${validAddress}/roles`),
+        expect.any(Object),
+      );
+    });
+
     it('should URL-encode guild IDs in role endpoint paths', async () => {
       const mockRoles = [{ id: '1', name: 'Role 1' }];
       (fetch as any).mockResolvedValue({
@@ -268,6 +290,40 @@ describe('Service Modules', () => {
         expect.stringContaining(`/members/${mixedCaseAddress.toLowerCase()}/roles`),
         expect.any(Object),
       );
+    });
+
+    it('should reject invalid guild IDs before fetching roles', async () => {
+      await expect(client.roles.getRoles({ guildId: ' ' })).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_INPUT,
+      });
+
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject invalid guild IDs before fetching user roles', async () => {
+      await expect(
+        client.roles.getUserRoles({
+          guildId: ' ',
+          walletAddress: '0x1234567890123456789012345678901234567890',
+        }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_INPUT,
+      });
+
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject invalid wallet addresses before fetching user roles', async () => {
+      await expect(
+        client.roles.getUserRoles({
+          guildId: 'guild_1',
+          walletAddress: 'not-an-address',
+        }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_ADDRESS,
+      });
+
+      expect(fetch).not.toHaveBeenCalled();
     });
   });
 

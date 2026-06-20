@@ -33,6 +33,25 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isEmptyJsonBodyError(error: unknown): boolean {
+  return error instanceof SyntaxError && /unexpected end of json input/i.test(error.message);
+}
+
+async function parseSuccessResponse<T>(response: Response): Promise<T> {
+  if (response.status === 204 || response.status === 205 || response.headers.get('Content-Length') === '0') {
+    return undefined as T;
+  }
+
+  try {
+    return await response.json() as T;
+  } catch (error) {
+    if (isEmptyJsonBodyError(error)) {
+      return undefined as T;
+    }
+    throw error;
+  }
+}
+
 // GuildPass SDK: Exposed interface structure.
 export class HttpClient {
   // GuildPass SDK: Class member structure property or constructor.
@@ -155,7 +174,7 @@ export class HttpClient {
         }
 
         // Success case
-        const data = await response.json();
+        const data = await parseSuccessResponse<T>(response);
         const durationMs = Date.now() - startTime;
 
         if (this.hooks?.onResponse) {
