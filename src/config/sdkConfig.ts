@@ -1,9 +1,8 @@
 // GuildPass SDK: Import external module dependencies.
-import { FetchLike, HttpHooks } from '../http/http.types';
+import { HttpHooks, RetryConfig } from '../http/http.types';
 import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
-import { RetryConfig } from '../http/http.types';
-import { ChainConfig } from '../contracts/contract.types';
+import { CacheAdapter } from '../cache/cache.types';
 
 // GuildPass SDK: Exported component definition.
 export type GuildPassClientConfig = {
@@ -30,6 +29,30 @@ export type GuildPassClientConfig = {
    * to preserve existing behaviour.
    */
   validateResponses?: boolean;
+  /**
+   * A cache adapter used to memoize read responses.
+   *
+   * Provide `new InMemoryCacheAdapter()` for a built-in solution, or supply
+   * any object that satisfies the {@link CacheAdapter} interface (e.g. a
+   * Redis adapter) for distributed caching.
+   *
+   * @example
+   * ```typescript
+   * import { GuildPassClient, InMemoryCacheAdapter } from '@guildpass/sdk';
+   *
+   * const client = new GuildPassClient({
+   *   apiUrl: 'https://api.guildpass.xyz',
+   *   cache: new InMemoryCacheAdapter(),
+   *   cacheTtl: 60_000,
+   * });
+   * ```
+   */
+  cache?: CacheAdapter;
+  /**
+   * Default TTL in **milliseconds** applied to every cached entry when
+   * a per-call TTL is not specified. Defaults to `0` (no expiry).
+   */
+  cacheTtl?: number;
   // GuildPass SDK: End of logic containment structure block.
 };
 

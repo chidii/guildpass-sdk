@@ -1,6 +1,9 @@
 // Main Client
 export * from './client/GuildPassClient';
 
+// Cache
+export * from './cache/cache.types';
+
 // Services
 export * from './access/access.service';
 export * from './membership/membership.service';
