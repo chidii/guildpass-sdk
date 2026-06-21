@@ -16,6 +16,7 @@ import { type NetworkConfig as NetworkConfigExport } from '../../dist/types';
 
 const config: GuildPassClientConfig = {
   apiUrl: 'https://smoke-test.invalid',
+  fetch: async () => new Response('{}', { status: 200 }),
 };
 
 const client: GuildPassClient = new GuildPassClient(config);

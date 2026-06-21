@@ -10,6 +10,7 @@ export * from './membership/membership.service';
 export * from './roles/roles.service';
 export * from './guilds/guilds.service';
 export * from './contracts/contractClient';
+export * from './contracts/contract.types';
 
 // Types
 export * from './types';
@@ -31,3 +32,4 @@ export * from './config/sdkConfig';
 // Validation
 export * from './validation/responseGuards';
 export * from './validation/assertResponse';
+export * from './wallet/helpers';

@@ -27,19 +27,19 @@ new GuildPassClient(config: GuildPassClientConfig)
 
 ## Access Module (`client.access`)
 
-### `checkAccess(params: AccessCheckParams)`
+### `checkAccess(params: AccessCheckParams, options?: RequestOptions)`
 
 Checks if a wallet can access a resource.
 
 - **Returns**: `Promise<AccessCheckResult>`
 
-### `checkAccessBatch(items: AccessCheckParams[], options?: AccessCheckBatchOptions)`
+### `checkAccessBatch(items: AccessCheckParams[], options?: AccessCheckBatchOptions & RequestOptions)`
 
 Checks access for multiple resources or wallets concurrently.
 
 - **Returns**: `Promise<AccessCheckBatchResult[]>`
 
-### `checkRoleAccess(params: RoleAccessCheckParams)`
+### `checkRoleAccess(params: RoleAccessCheckParams, options?: RequestOptions)`
 
 Checks if a wallet has a specific role.
 
@@ -49,13 +49,13 @@ Checks if a wallet has a specific role.
 
 ## Membership Module (`client.membership`)
 
-### `getMembership(params: MembershipParams)`
+### `getMembership(params: MembershipParams, options?: RequestOptions)`
 
 Fetches detailed membership status.
 
 - **Returns**: `Promise<Membership>`
 
-### `isMember(params: MembershipParams)`
+### `isMember(params: MembershipParams, options?: RequestOptions)`
 
 Quick check for active membership.
 
@@ -65,13 +65,13 @@ Quick check for active membership.
 
 ## Roles Module (`client.roles`)
 
-### `getRoles(params: GetRolesParams)`
+### `getRoles(params: GetRolesParams, options?: RequestOptions)`
 
 Fetches all roles for a guild.
 
 - **Returns**: `Promise<GuildRole[]>`
 
-### `getUserRoles(params: GetUserRolesParams)`
+### `getUserRoles(params: GetUserRolesParams, options?: RequestOptions)`
 
 Fetches roles assigned to a user.
 
@@ -81,17 +81,40 @@ Fetches roles assigned to a user.
 
 ## Guilds Module (`client.guilds`)
 
-### `getGuild(params: GetGuildParams)`
+### `getGuild(params: GetGuildParams, options?: RequestOptions)`
 
 Fetches basic guild metadata.
 
 - **Returns**: `Promise<Guild>`
 
-### `getGuildConfig(params: GetGuildParams)`
+### `getGuildConfig(params: GetGuildParams, options?: RequestOptions)`
 
 Fetches full guild configuration.
 
 - **Returns**: `Promise<GuildConfig>`
+
+---
+
+## Contract Module (`client.contracts`)
+
+### `getGuildOwner(params: GuildOwnerParams)`
+
+Fetches the owner wallet address for a guild through the configured JSON-RPC
+provider and contract address.
+
+```typescript
+await client.contracts.getGuildOwner({
+  guildId: 'guild_1',
+  chainId: 8453, // optional chain override
+  contractAddress: '0x0000000000000000000000000000000000000000', // optional contract override
+});
+```
+
+- **Returns**: `Promise<string>`
+- **Requires**: an `rpcUrl` and a contract address from the resolved chain config or per-call `contractAddress`
+- **Contract call**: `eth_call` to `getGuildOwner(bytes32)`
+- **Guild ID encoding**: accepts a 32-byte hex value, unsigned integer string, or UTF-8 string up to 32 bytes
+- **Errors**: throws `INVALID_CONFIG` for missing RPC/contract config, `INVALID_INPUT` for invalid guild IDs, `INVALID_ADDRESS` for invalid contract addresses, `HTTP_ERROR` for RPC failures, and `INVALID_RESPONSE` for malformed RPC return data
 
 ---
 

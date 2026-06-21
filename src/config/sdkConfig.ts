@@ -10,11 +10,18 @@ export type GuildPassClientConfig = {
   chainId?: number;
   rpcUrl?: string;
   contractAddress?: string;
+  /** Per-chain RPC URL and contract address overrides, keyed by chain ID. */
+  chains?: Record<number, ChainConfig>;
   apiKey?: string;
   timeoutMs?: number;
   /** Global retry policy applied to all requests. Defaults to no retries. */
   retry?: RetryConfig;
   hooks?: HttpHooks;
+  /**
+   * Optional fetch-compatible transport for tests, tracing, proxies,
+   * custom runtimes, or environments without globalThis.fetch.
+   */
+  fetch?: FetchLike;
   /**
    * When true, service responses are checked against runtime shape guards
    * before being returned, throwing a GuildPassError with code
@@ -73,4 +80,31 @@ export function validateConfig(config: GuildPassClientConfig): void {
       GuildPassErrorCode.INVALID_CONFIG,
     );
   }
+  const transport = config.fetch ?? globalThis.fetch;
+  if (typeof transport !== 'function') {
+    throw new GuildPassError(
+      'A fetch-compatible transport is required. Provide config.fetch or use a runtime with globalThis.fetch.',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+}
+
+/**
+ * Resolves the chain configuration for a given chain ID.
+ * Per-chain entries in `config.chains` take precedence over the top-level
+ * `rpcUrl` / `contractAddress` fallbacks.
+ * Throws `INVALID_CONFIG` only when a `chains` map is provided but does not
+ * contain an entry for the requested chain.
+ */
+export function resolveChainConfig(config: GuildPassClientConfig, chainId: number): ChainConfig {
+  if (config.chains) {
+    if (Object.prototype.hasOwnProperty.call(config.chains, chainId)) {
+      return config.chains[chainId];
+    }
+    throw new GuildPassError(
+      `No configuration found for chain ID ${chainId}`,
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+  return { rpcUrl: config.rpcUrl, contractAddress: config.contractAddress };
 }

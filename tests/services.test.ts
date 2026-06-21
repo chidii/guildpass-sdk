@@ -68,6 +68,33 @@ describe('Service Modules', () => {
       );
     });
 
+    it('should override the global timeout for an individual access check', async () => {
+      const timeoutClient = new GuildPassClient({
+        apiUrl: 'https://api.test.com',
+        timeoutMs: 1000,
+      });
+      (fetch as any).mockImplementation((_url: string, init: RequestInit) => {
+        const error = new Error('AbortError');
+        error.name = 'AbortError';
+        init.signal?.dispatchEvent(new Event('abort'));
+        return Promise.reject(error);
+      });
+
+      await expect(
+        timeoutClient.access.checkAccess(
+          {
+            walletAddress: '0x1234567890123456789012345678901234567890',
+            guildId: 'guild_1',
+            resourceId: 'res_1',
+          },
+          { timeoutMs: 25 },
+        ),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.TIMEOUT,
+        message: 'Request timed out after 25ms',
+      });
+    });
+
     describe('checkAccessBatch', () => {
       it('should process multiple access checks and preserve order', async () => {
         const mockResult = { hasAccess: true, matchedRoles: ['admin'] };

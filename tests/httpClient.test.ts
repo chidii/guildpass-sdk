@@ -40,6 +40,44 @@ describe('HttpClient', () => {
     );
   });
 
+  it('should use injected fetch transport without stubbing global fetch', async () => {
+    const injectedFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ via: 'custom-transport' }),
+      headers: new Headers(),
+    });
+    const globalFetch = vi.fn();
+    vi.stubGlobal('fetch', globalFetch);
+    const transportClient = new HttpClient(baseUrl, undefined, 10000, {
+      fetch: injectedFetch,
+    });
+
+    const result = await transportClient.get('/custom-fetch');
+
+    expect(result).toEqual({ via: 'custom-transport' });
+    expect(injectedFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/custom-fetch'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+
+  it('should throw a clear config error when no fetch transport is available', async () => {
+    vi.unstubAllGlobals();
+    const originalFetch = globalThis.fetch;
+
+    try {
+      vi.stubGlobal('fetch', undefined);
+      const noFetchClient = new HttpClient(baseUrl);
+      await expect(noFetchClient.get('/missing-fetch')).rejects.toThrow(
+        'A fetch-compatible transport is required.',
+      );
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  });
+
   it('should include API key in headers if provided', async () => {
     const clientWithKey = new HttpClient(baseUrl, 'secret-key');
     (fetch as any).mockResolvedValue({
@@ -318,6 +356,47 @@ describe('HttpClient', () => {
       expect(fetch).toHaveBeenCalledTimes(2); // 1 initial + 1 retry
     });
   });
+
+  describe('AbortSignal support', () => {
+    it('short-circuits without calling fetch when signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(client.get('/cancel', { signal: controller.signal })).rejects.toMatchObject({
+        code: GuildPassErrorCode.ABORTED,
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws ABORTED when an external signal fires during fetch', async () => {
+      const externalController = new AbortController();
+
+      (fetch as any).mockImplementation(() => {
+        externalController.abort();
+        const error = new Error('AbortError');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      await expect(
+        client.get('/cancel', { signal: externalController.signal }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.ABORTED,
+      });
+    });
+
+    it('throws TIMEOUT (not ABORTED) when only the timeout fires', async () => {
+      (fetch as any).mockImplementation(() => {
+        const error = new Error('AbortError');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      await expect(client.get('/timeout')).rejects.toMatchObject({
+        code: GuildPassErrorCode.TIMEOUT,
+      });
+    });
+  });
 });
 
 describe('HttpClient Hooks', () => {
@@ -375,21 +454,32 @@ describe('HttpClient Hooks', () => {
 
   it('should not expose sensitive request details in hook payloads', async () => {
     const onRequest = vi.fn();
-    const client = new HttpClient(baseUrl, 'secret-key', 10000, { onRequest });
+    const onResponse = vi.fn();
+    const client = new HttpClient(baseUrl, 'secret-key', 10000, { onRequest, onResponse });
 
     (fetch as any).mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
-      headers: new Headers(),
+      headers: new Headers({ 'Set-Cookie': 'session=abc', 'Content-Type': 'application/json' }),
     });
 
-    await client.post('/safe-test', { secret: 'value' });
+    await client.post('/safe-test', { secret: 'value' }, {
+      headers: { Authorization: 'Bearer token', Cookie: 'sid=123' }
+    });
 
-    const payload = onRequest.mock.calls[0][0];
-    expect(payload).toEqual(expect.objectContaining({ method: 'POST', path: '/safe-test' }));
-    expect(payload).not.toHaveProperty('apiKey');
-    expect(payload).not.toHaveProperty('body');
+    const reqPayload = onRequest.mock.calls[0][0];
+    expect(reqPayload).toEqual(expect.objectContaining({ method: 'POST', path: '/safe-test' }));
+    expect(reqPayload).not.toHaveProperty('apiKey');
+    expect(reqPayload).not.toHaveProperty('body');
+    expect(reqPayload.headers['X-API-Key']).toBe('[REDACTED]');
+    expect(reqPayload.headers['Authorization']).toBe('[REDACTED]');
+    expect(reqPayload.headers['Cookie']).toBe('[REDACTED]');
+    expect(reqPayload.headers['Content-Type']).toBe('application/json');
+
+    const resPayload = onResponse.mock.calls[0][0];
+    expect(resPayload.responseHeaders['set-cookie']).toBe('[REDACTED]');
+    expect(resPayload.responseHeaders['content-type']).toBe('application/json');
   });
 
   it('should call onError when request fails and normalise error', async () => {

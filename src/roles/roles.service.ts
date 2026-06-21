@@ -6,6 +6,7 @@ import { normaliseAddress } from '../utils/address';
 import { encodePathSegment } from '../utils/formatting';
 import { assertValidResponse } from '../validation/assertResponse';
 import { isGuildRoleArray } from '../validation/responseGuards';
+import type { RequestOptions } from '../types/common';
 // GuildPass SDK: Pull in package or module bindings.
 import { GetRolesParams, GetUserRolesParams, GuildRole } from './roles.types';
 
@@ -21,13 +22,16 @@ export class RolesService {
    * Fetches all roles available in a guild.
    */
   // GuildPass SDK: Class member structure property or constructor.
-  public async getRoles(params: GetRolesParams): Promise<GuildRole[]> {
+  public async getRoles(params: GetRolesParams, options?: RequestOptions): Promise<GuildRole[]> {
     // GuildPass SDK: Variable binding initialization.
     const { guildId } = params;
     validateGuildId(guildId);
 
     // GuildPass SDK: Return evaluated output value.
-    const result = await this.http.get<GuildRole[]>(`/guilds/${encodePathSegment(guildId)}/roles`);
+    const path = `/guilds/${encodePathSegment(guildId)}/roles`;
+    const result = options
+      ? await this.http.get<GuildRole[]>(path, options)
+      : await this.http.get<GuildRole[]>(path);
     return this.validateResponses
       ? assertValidResponse(result, isGuildRoleArray, 'GuildRole[]')
       : result;
@@ -38,7 +42,7 @@ export class RolesService {
    * Fetches roles assigned to a specific wallet in a guild.
    */
   // GuildPass SDK: Class member structure property or constructor.
-  public async getUserRoles(params: GetUserRolesParams): Promise<GuildRole[]> {
+  public async getUserRoles(params: GetUserRolesParams, options?: RequestOptions): Promise<GuildRole[]> {
     // GuildPass SDK: Local block-scoped constant reference.
     const { walletAddress, guildId } = params;
 
@@ -46,9 +50,10 @@ export class RolesService {
     validateGuildId(guildId);
 
     // GuildPass SDK: Terminate function block execution and return.
-    const result = await this.http.get<GuildRole[]>(
-      `/guilds/${encodePathSegment(guildId)}/members/${encodePathSegment(normaliseAddress(walletAddress))}/roles`,
-    );
+    const path = `/guilds/${encodePathSegment(guildId)}/members/${encodePathSegment(normaliseAddress(walletAddress))}/roles`;
+    const result = options
+      ? await this.http.get<GuildRole[]>(path, options)
+      : await this.http.get<GuildRole[]>(path);
     return this.validateResponses
       ? assertValidResponse(result, isGuildRoleArray, 'GuildRole[]')
       : result;

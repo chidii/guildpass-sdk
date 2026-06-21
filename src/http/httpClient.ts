@@ -3,10 +3,34 @@ import { GuildPassError } from '../errors/GuildPassError';
 // GuildPass SDK: Import external module dependencies.
 import { GuildPassErrorCode } from '../errors/errorCodes';
 // GuildPass SDK: Pull in package or module bindings.
-import { HttpRequestOptions, HttpResponse, RetryConfig, HttpHooks, RequestHookPayload } from './http.types';
+import {
+  FetchLike,
+  HttpClientConfig,
+  HttpHooks,
+  HttpRequestOptions,
+  HttpResponse,
+  RequestHookPayload,
+  RetryConfig,
+} from './http.types';
 
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+const SENSITIVE_HEADERS = new Set(['authorization', 'x-api-key', 'cookie', 'set-cookie']);
+
+export function redactHeaders(headers: Headers | Record<string, string>): Record<string, string> {
+  const redacted: Record<string, string> = {};
+  
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value;
+    });
+  } else {
+    Object.entries(headers).forEach(([key, value]) => {
+      redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value;
+    });
+  }
+  return redacted;
+}
 
 function resolveRetry(global: RetryConfig | undefined, local: RetryConfig | undefined): Required<RetryConfig> {
   const merged = { ...global, ...local };
@@ -37,6 +61,17 @@ function isEmptyJsonBodyError(error: unknown): boolean {
   return error instanceof SyntaxError && /unexpected end of json input/i.test(error.message);
 }
 
+function isRetryConfig(config: RetryConfig | HttpHooks | HttpClientConfig): config is RetryConfig {
+  return 'maxRetries' in config ||
+    'baseDelayMs' in config ||
+    'retryableStatuses' in config ||
+    'allowMutatingRetry' in config;
+}
+
+function isHooksConfig(config: RetryConfig | HttpHooks | HttpClientConfig): config is HttpHooks {
+  return 'onRequest' in config || 'onResponse' in config || 'onError' in config;
+}
+
 async function parseSuccessResponse<T>(response: Response): Promise<T> {
   if (response.status === 204 || response.status === 205 || response.headers.get('Content-Length') === '0') {
     return undefined as T;
@@ -64,18 +99,30 @@ export class HttpClient {
   private readonly globalRetry?: RetryConfig;
   // GuildPass SDK: Class member structure property or constructor.
   private readonly hooks?: HttpHooks;
+  private readonly fetchTransport?: FetchLike;
 
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, configOrHooks?: RetryConfig | HttpHooks) {
+  constructor(
+    baseUrl: string,
+    apiKey?: string,
+    timeoutMs = 10000,
+    configOrHooks?: RetryConfig | HttpHooks | HttpClientConfig,
+  ) {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
 
     // Discriminate between RetryConfig and HttpHooks
-    if (configOrHooks && ('maxRetries' in configOrHooks || 'baseDelayMs' in configOrHooks || 'retryableStatuses' in configOrHooks || 'allowMutatingRetry' in configOrHooks)) {
-      this.globalRetry = configOrHooks as RetryConfig;
-    } else if (configOrHooks && ('onRequest' in configOrHooks || 'onResponse' in configOrHooks || 'onError' in configOrHooks)) {
-      this.hooks = configOrHooks as HttpHooks;
+    if (configOrHooks) {
+      if ('fetch' in configOrHooks || 'retry' in configOrHooks || 'hooks' in configOrHooks) {
+        this.globalRetry = configOrHooks.retry;
+        this.hooks = configOrHooks.hooks;
+        this.fetchTransport = configOrHooks.fetch;
+      } else if (isRetryConfig(configOrHooks)) {
+        this.globalRetry = configOrHooks;
+      } else if (isHooksConfig(configOrHooks)) {
+        this.hooks = configOrHooks;
+      }
     }
   }
 
@@ -103,16 +150,24 @@ export class HttpClient {
     path: string,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponse<T>> {
-    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs, retry } = options;
+    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs, retry, signal } = options;
 
     const retryConfig = resolveRetry(this.globalRetry, retry);
     const canRetry =
       retryConfig.maxRetries > 0 &&
       (IDEMPOTENT_METHODS.has(method) || retryConfig.allowMutatingRetry);
 
+    if (signal?.aborted) {
+      throw new GuildPassError('Request aborted', GuildPassErrorCode.ABORTED);
+    }
+
     // GuildPass SDK: Variable binding initialization.
     const startTime = Date.now();
-    const hookPayload: RequestHookPayload = { method, path };
+    const hookPayload: RequestHookPayload = { 
+      method, 
+      path,
+      headers: redactHeaders(requestHeaders),
+    };
 
     if (this.hooks?.onRequest) {
       try {
@@ -130,22 +185,28 @@ export class HttpClient {
       });
     }
 
-    const requestHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...headers,
-    };
-    if (this.apiKey) {
-      requestHeaders['X-API-Key'] = this.apiKey;
-    }
-
     let attempt = 0;
 
     while (true) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+      let onAbort: (() => void) | undefined;
+      if (signal) {
+        onAbort = () => controller.abort();
+        signal.addEventListener('abort', onAbort);
+      }
+
       try {
-        const response = await fetch(url.toString(), {
+        const transport = this.fetchTransport ?? globalThis.fetch;
+        if (typeof transport !== 'function') {
+          throw new GuildPassError(
+            'A fetch-compatible transport is required.',
+            GuildPassErrorCode.INVALID_CONFIG,
+          );
+        }
+
+        const response = await transport(url.toString(), {
           method,
           headers: requestHeaders,
           body: body ? JSON.stringify(body) : undefined,
@@ -153,6 +214,7 @@ export class HttpClient {
         });
 
         clearTimeout(timeoutId);
+        if (onAbort) signal!.removeEventListener('abort', onAbort);
 
         if (!response.ok) {
           const isRetryable = canRetry && retryConfig.retryableStatuses.includes(response.status);
@@ -179,7 +241,12 @@ export class HttpClient {
 
         if (this.hooks?.onResponse) {
           try {
-            await this.hooks.onResponse({ ...hookPayload, status: response.status, durationMs });
+            await this.hooks.onResponse({ 
+              ...hookPayload, 
+              status: response.status, 
+              durationMs,
+              responseHeaders: redactHeaders(response.headers)
+            });
           } catch (err) {
             console.error('GuildPass SDK: onResponse hook failed', err);
           }
@@ -193,14 +260,14 @@ export class HttpClient {
 
       } catch (error: any) {
         clearTimeout(timeoutId);
+        if (onAbort) signal!.removeEventListener('abort', onAbort);
 
         let finalError = error;
 
         if (error.name === 'AbortError') {
-          finalError = new GuildPassError(
-            `Request timed out after ${timeoutMs}ms`,
-            GuildPassErrorCode.TIMEOUT,
-          );
+          finalError = signal?.aborted
+            ? new GuildPassError('Request aborted', GuildPassErrorCode.ABORTED)
+            : new GuildPassError(`Request timed out after ${timeoutMs}ms`, GuildPassErrorCode.TIMEOUT);
         } else if (!(error instanceof GuildPassError)) {
           // Network-level errors (fetch rejection) are safe to retry on idempotent methods.
           if (canRetry && attempt < retryConfig.maxRetries) {

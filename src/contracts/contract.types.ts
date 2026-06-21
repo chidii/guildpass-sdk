@@ -1,9 +1,22 @@
 // GuildPass SDK: Import external module dependencies.
 import { AccessRequirement } from '../types/common';
 
+/** Per-chain RPC and contract address configuration. */
+export type ChainConfig = {
+  rpcUrl?: string;
+  contractAddress?: string;
+};
+
 // GuildPass SDK: Exposed interface structure.
 export type TokenBalanceParams = {
   walletAddress: string;
+  contractAddress?: string;
+  // GuildPass SDK: End of logic containment structure block.
+};
+
+export type GuildOwnerParams = {
+  guildId: string;
+  chainId?: number;
   contractAddress?: string;
   // GuildPass SDK: End of logic containment structure block.
 };

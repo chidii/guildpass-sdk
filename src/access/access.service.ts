@@ -10,6 +10,7 @@ import {
 import { normaliseAddress } from '../utils/address';
 import { assertValidResponse } from '../validation/assertResponse';
 import { isAccessCheckResult } from '../validation/responseGuards';
+import type { RequestOptions } from '../types/common';
 // GuildPass SDK: Import external module dependencies.
 import { AccessCheckParams, AccessCheckResult, RoleAccessCheckParams, AccessCheckBatchOptions, AccessCheckBatchResult } from './access.types';
 
@@ -25,7 +26,7 @@ export class AccessService {
    * Checks whether a wallet has access to a gated resource.
    */
   // GuildPass SDK: Class member structure property or constructor.
-  public async checkAccess(params: AccessCheckParams): Promise<AccessCheckResult> {
+  public async checkAccess(params: AccessCheckParams, options?: RequestOptions): Promise<AccessCheckResult> {
     // GuildPass SDK: Variable binding initialization.
     const { walletAddress, guildId, resourceId } = params;
 
@@ -42,6 +43,8 @@ export class AccessService {
         resourceId,
         // GuildPass SDK: End of logic containment structure block.
       },
+      timeoutMs: options?.timeoutMs,
+      retry: options?.retry,
       // GuildPass SDK: End of logic containment structure block.
     });
 
@@ -56,7 +59,7 @@ export class AccessService {
    */
   public async checkAccessBatch(
     items: AccessCheckParams[],
-    options?: AccessCheckBatchOptions
+    options?: AccessCheckBatchOptions & RequestOptions
   ): Promise<AccessCheckBatchResult[]> {
     const concurrency = options?.concurrency ?? 5;
     const failFast = options?.failFast ?? false;
@@ -67,7 +70,7 @@ export class AccessService {
     const execute = async (item: AccessCheckParams, index: number) => {
       if (hasFailed && failFast) return;
       try {
-        const result = await this.checkAccess(item);
+        const result = await this.checkAccess(item, options);
         results[index] = { input: item, status: 'fulfilled', value: result };
       } catch (error) {
         if (failFast) hasFailed = true;
@@ -99,7 +102,7 @@ export class AccessService {
    * Checks whether a wallet has a specific role in a guild.
    */
   // GuildPass SDK: Class member structure property or constructor.
-  public async checkRoleAccess(params: RoleAccessCheckParams): Promise<boolean> {
+  public async checkRoleAccess(params: RoleAccessCheckParams, options?: RequestOptions): Promise<boolean> {
     // GuildPass SDK: Local block-scoped constant reference.
     const { walletAddress, guildId, roleId } = params;
 
@@ -116,6 +119,8 @@ export class AccessService {
         roleId,
         // GuildPass SDK: End of logic containment structure block.
       },
+      timeoutMs: options?.timeoutMs,
+      retry: options?.retry,
       // GuildPass SDK: End of logic containment structure block.
     });
 

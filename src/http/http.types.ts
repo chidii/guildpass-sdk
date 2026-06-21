@@ -17,6 +17,17 @@ export type RetryConfig = {
   allowMutatingRetry?: boolean;
 };
 
+export type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export type HttpClientConfig = {
+  retry?: RetryConfig;
+  hooks?: HttpHooks;
+  fetch?: FetchLike;
+};
+
 // GuildPass SDK: Exported function execution unit.
 export type HttpRequestOptions = {
   method?: HttpMethod;
@@ -26,6 +37,8 @@ export type HttpRequestOptions = {
   timeoutMs?: number;
   /** Per-request retry overrides. Merged over the global retry config. */
   retry?: RetryConfig;
+  /** External AbortSignal. Aborts the underlying fetch when fired; composes with the timeout. */
+  signal?: AbortSignal;
   // GuildPass SDK: End of logic containment structure block.
 };
 
@@ -41,11 +54,15 @@ export type HttpResponse<T = any> = {
 export type RequestHookPayload = {
   method: HttpMethod;
   path: string;
+  /** Safely redacted headers. Sensitive values are replaced with '[REDACTED]'. */
+  headers: Record<string, string>;
 };
 
 export type ResponseHookPayload = RequestHookPayload & {
   status: number;
   durationMs: number;
+  /** Safely redacted response headers. Sensitive values are replaced with '[REDACTED]'. */
+  responseHeaders: Record<string, string>;
 };
 
 export type ErrorHookPayload = RequestHookPayload & {

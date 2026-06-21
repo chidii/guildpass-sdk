@@ -90,7 +90,7 @@ The SDK is organized into focused service modules accessible via the main client
 | `client.membership` | Query wallet membership status and join dates.       |
 | `client.roles`      | Retrieve available roles and user assignments.       |
 | `client.guilds`     | Fetch guild metadata, themes, and social links.      |
-| `client.contracts`  | Future on-chain interaction stubs (MVP).             |
+| `client.contracts`  | Resolve chain config and read guild owner addresses. |
 
 ## ⚙️ Configuration
 
@@ -104,6 +104,10 @@ const client = new GuildPassClient({
   cacheTtl?: number;            // Default TTL in ms for all cached entries
   rpcUrl?: string;          // Optional RPC provider for on-chain checks
   contractAddress?: string; // Optional default contract address
+  chains?: Record<number, { // Optional per-chain RPC/contract overrides
+    rpcUrl?: string;
+    contractAddress?: string;
+  }>;
 });
 ```
 
