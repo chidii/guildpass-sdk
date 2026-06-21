@@ -7,6 +7,22 @@ import { HttpRequestOptions, HttpResponse, RetryConfig, HttpHooks, RequestHookPa
 
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
 const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+const SENSITIVE_HEADERS = new Set(['authorization', 'x-api-key', 'cookie', 'set-cookie']);
+
+export function redactHeaders(headers: Headers | Record<string, string>): Record<string, string> {
+  const redacted: Record<string, string> = {};
+  
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value;
+    });
+  } else {
+    Object.entries(headers).forEach(([key, value]) => {
+      redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value;
+    });
+  }
+  return redacted;
+}
 
 function resolveRetry(global: RetryConfig | undefined, local: RetryConfig | undefined): Required<RetryConfig> {
   const merged = { ...global, ...local };
@@ -110,9 +126,21 @@ export class HttpClient {
       retryConfig.maxRetries > 0 &&
       (IDEMPOTENT_METHODS.has(method) || retryConfig.allowMutatingRetry);
 
+    const requestHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
+    if (this.apiKey) {
+      requestHeaders['X-API-Key'] = this.apiKey;
+    }
+
     // GuildPass SDK: Variable binding initialization.
     const startTime = Date.now();
-    const hookPayload: RequestHookPayload = { method, path };
+    const hookPayload: RequestHookPayload = { 
+      method, 
+      path,
+      headers: redactHeaders(requestHeaders),
+    };
 
     if (this.hooks?.onRequest) {
       try {
@@ -128,14 +156,6 @@ export class HttpClient {
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.append(key, String(value));
       });
-    }
-
-    const requestHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...headers,
-    };
-    if (this.apiKey) {
-      requestHeaders['X-API-Key'] = this.apiKey;
     }
 
     let attempt = 0;
@@ -179,7 +199,12 @@ export class HttpClient {
 
         if (this.hooks?.onResponse) {
           try {
-            await this.hooks.onResponse({ ...hookPayload, status: response.status, durationMs });
+            await this.hooks.onResponse({ 
+              ...hookPayload, 
+              status: response.status, 
+              durationMs,
+              responseHeaders: redactHeaders(response.headers)
+            });
           } catch (err) {
             console.error('GuildPass SDK: onResponse hook failed', err);
           }

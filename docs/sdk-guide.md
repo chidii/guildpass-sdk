@@ -201,4 +201,6 @@ Non-idempotent methods (POST, PATCH) are never retried unless you explicitly set
 });
 ```
 
-Hook payloads expose safe request metadata only. Sensitive values like the API key and full request body are not included in hook payloads, and hook failures are logged without changing the normal SDK response behavior.
+Hook payloads expose safe request metadata only. Sensitive values like the API key, `Authorization` and `Cookie` headers, and full request body are not included in hook payloads. Headers are redacted consistently before reaching your callbacks, and hook failures are logged without changing the normal SDK response behavior.
+
+⚠️ **Warning:** Be careful not to log sensitive application data. Although the SDK automatically redacts known sensitive headers (`authorization`, `x-api-key`, `cookie`, `set-cookie`), any proprietary query parameters or custom headers containing sensitive info should be handled securely.

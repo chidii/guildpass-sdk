@@ -41,11 +41,15 @@ export type HttpResponse<T = any> = {
 export type RequestHookPayload = {
   method: HttpMethod;
   path: string;
+  /** Safely redacted headers. Sensitive values are replaced with '[REDACTED]'. */
+  headers: Record<string, string>;
 };
 
 export type ResponseHookPayload = RequestHookPayload & {
   status: number;
   durationMs: number;
+  /** Safely redacted response headers. Sensitive values are replaced with '[REDACTED]'. */
+  responseHeaders: Record<string, string>;
 };
 
 export type ErrorHookPayload = RequestHookPayload & {

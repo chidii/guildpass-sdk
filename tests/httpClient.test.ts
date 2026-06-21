@@ -375,21 +375,32 @@ describe('HttpClient Hooks', () => {
 
   it('should not expose sensitive request details in hook payloads', async () => {
     const onRequest = vi.fn();
-    const client = new HttpClient(baseUrl, 'secret-key', 10000, { onRequest });
+    const onResponse = vi.fn();
+    const client = new HttpClient(baseUrl, 'secret-key', 10000, { onRequest, onResponse });
 
     (fetch as any).mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
-      headers: new Headers(),
+      headers: new Headers({ 'Set-Cookie': 'session=abc', 'Content-Type': 'application/json' }),
     });
 
-    await client.post('/safe-test', { secret: 'value' });
+    await client.post('/safe-test', { secret: 'value' }, {
+      headers: { Authorization: 'Bearer token', Cookie: 'sid=123' }
+    });
 
-    const payload = onRequest.mock.calls[0][0];
-    expect(payload).toEqual(expect.objectContaining({ method: 'POST', path: '/safe-test' }));
-    expect(payload).not.toHaveProperty('apiKey');
-    expect(payload).not.toHaveProperty('body');
+    const reqPayload = onRequest.mock.calls[0][0];
+    expect(reqPayload).toEqual(expect.objectContaining({ method: 'POST', path: '/safe-test' }));
+    expect(reqPayload).not.toHaveProperty('apiKey');
+    expect(reqPayload).not.toHaveProperty('body');
+    expect(reqPayload.headers['X-API-Key']).toBe('[REDACTED]');
+    expect(reqPayload.headers['Authorization']).toBe('[REDACTED]');
+    expect(reqPayload.headers['Cookie']).toBe('[REDACTED]');
+    expect(reqPayload.headers['Content-Type']).toBe('application/json');
+
+    const resPayload = onResponse.mock.calls[0][0];
+    expect(resPayload.responseHeaders['set-cookie']).toBe('[REDACTED]');
+    expect(resPayload.responseHeaders['content-type']).toBe('application/json');
   });
 
   it('should call onError when request fails and normalise error', async () => {
