@@ -318,6 +318,47 @@ describe('HttpClient', () => {
       expect(fetch).toHaveBeenCalledTimes(2); // 1 initial + 1 retry
     });
   });
+
+  describe('AbortSignal support', () => {
+    it('short-circuits without calling fetch when signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(client.get('/cancel', { signal: controller.signal })).rejects.toMatchObject({
+        code: GuildPassErrorCode.ABORTED,
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws ABORTED when an external signal fires during fetch', async () => {
+      const externalController = new AbortController();
+
+      (fetch as any).mockImplementation(() => {
+        externalController.abort();
+        const error = new Error('AbortError');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      await expect(
+        client.get('/cancel', { signal: externalController.signal }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.ABORTED,
+      });
+    });
+
+    it('throws TIMEOUT (not ABORTED) when only the timeout fires', async () => {
+      (fetch as any).mockImplementation(() => {
+        const error = new Error('AbortError');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      await expect(client.get('/timeout')).rejects.toMatchObject({
+        code: GuildPassErrorCode.TIMEOUT,
+      });
+    });
+  });
 });
 
 describe('HttpClient Hooks', () => {
