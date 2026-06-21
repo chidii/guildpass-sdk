@@ -108,6 +108,30 @@ client.contracts.getChainConfig(42161);
 
 The existing single-chain config (`rpcUrl` + `contractAddress` at the top level) remains fully backwards-compatible and is used as a fallback when no `chains` map is set.
 
+## On-chain Guild Ownership
+
+`client.contracts.getGuildOwner` queries the resolved chain contract through JSON-RPC:
+
+```typescript
+const ownerAddress = await client.contracts.getGuildOwner({
+  guildId: 'guild_1',
+});
+```
+
+You can override the target chain or contract per call:
+
+```typescript
+const ownerAddress = await client.contracts.getGuildOwner({
+  guildId: '42',
+  chainId: 8453,
+  contractAddress: '0x1111111111111111111111111111111111111111',
+});
+```
+
+The SDK validates the RPC and contract configuration before making the call,
+encodes the guild ID as `bytes32`, calls `getGuildOwner(bytes32)`, and validates
+that the RPC response decodes to an Ethereum address.
+
 
 
 The default timeout is 10 seconds. You can override this globally or per request (in future versions):

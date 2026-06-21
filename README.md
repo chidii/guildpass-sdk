@@ -89,7 +89,7 @@ The SDK is organized into focused service modules accessible via the main client
 | `client.membership` | Query wallet membership status and join dates.       |
 | `client.roles`      | Retrieve available roles and user assignments.       |
 | `client.guilds`     | Fetch guild metadata, themes, and social links.      |
-| `client.contracts`  | Future on-chain interaction stubs (MVP).             |
+| `client.contracts`  | Resolve chain config and read guild owner addresses. |
 
 ## ⚙️ Configuration
 
@@ -101,8 +101,37 @@ const client = new GuildPassClient({
   timeoutMs?: number;       // Request timeout (default: 10000)
   rpcUrl?: string;          // Optional RPC provider for on-chain checks
   contractAddress?: string; // Optional default contract address
+  chains?: Record<number, { // Optional per-chain RPC/contract overrides
+    rpcUrl?: string;
+    contractAddress?: string;
+  }>;
 });
 ```
+
+### Guild owner lookup
+
+Configure an RPC provider and contract address to read guild ownership on-chain:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  chainId: 8453,
+  chains: {
+    8453: {
+      rpcUrl: 'https://mainnet.base.org',
+      contractAddress: '0x0000000000000000000000000000000000000000',
+    },
+  },
+});
+
+const ownerAddress = await client.contracts.getGuildOwner({
+  guildId: 'guild_1',
+});
+```
+
+The lookup uses an `eth_call` against `getGuildOwner(bytes32)` and returns the
+owner address. You can pass `chainId` or `contractAddress` per call to override
+the client's default chain or contract.
 
 ## 📚 Documentation
 
