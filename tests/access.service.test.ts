@@ -46,6 +46,37 @@ describe('AccessService', () => {
     });
   });
 
+  it('passes per-request timeout options to the access check request', async () => {
+    const accessResult: AccessCheckResult = {
+      hasAccess: true,
+      walletAddress: validAddress,
+      guildId: 'guild_1',
+      resourceId: 'resource_1',
+      requiredRoles: [],
+      matchedRoles: [],
+    };
+    const { get, service } = createService(accessResult);
+
+    await service.checkAccess(
+      {
+        walletAddress: mixedCaseAddress,
+        guildId: 'guild_1',
+        resourceId: 'resource_1',
+      },
+      { timeoutMs: 250 },
+    );
+
+    expect(get).toHaveBeenCalledWith('/access/check', {
+      params: {
+        address: mixedCaseAddress.toLowerCase(),
+        guildId: 'guild_1',
+        resourceId: 'resource_1',
+      },
+      timeoutMs: 250,
+      retry: undefined,
+    });
+  });
+
   it('calls the role access endpoint with expected query parameters', async () => {
     const { get, service } = createService({ hasRole: true });
 
@@ -62,6 +93,29 @@ describe('AccessService', () => {
         guildId: 'guild_1',
         roleId: 'role_1',
       },
+    });
+  });
+
+  it('passes per-request timeout options to role access checks', async () => {
+    const { get, service } = createService({ hasRole: true });
+
+    await service.checkRoleAccess(
+      {
+        walletAddress: mixedCaseAddress,
+        guildId: 'guild_1',
+        roleId: 'role_1',
+      },
+      { timeoutMs: 300 },
+    );
+
+    expect(get).toHaveBeenCalledWith('/access/role-check', {
+      params: {
+        address: mixedCaseAddress.toLowerCase(),
+        guildId: 'guild_1',
+        roleId: 'role_1',
+      },
+      timeoutMs: 300,
+      retry: undefined,
     });
   });
 
@@ -115,5 +169,38 @@ describe('AccessService', () => {
       }),
     ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_INPUT });
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('passes request options through batch access checks', async () => {
+    const accessResult: AccessCheckResult = {
+      hasAccess: true,
+      walletAddress: validAddress,
+      guildId: 'guild_1',
+      resourceId: 'resource_1',
+      requiredRoles: [],
+      matchedRoles: [],
+    };
+    const { get, service } = createService(accessResult);
+
+    await service.checkAccessBatch(
+      [
+        {
+          walletAddress: mixedCaseAddress,
+          guildId: 'guild_1',
+          resourceId: 'resource_1',
+        },
+      ],
+      { concurrency: 1, timeoutMs: 750 },
+    );
+
+    expect(get).toHaveBeenCalledWith('/access/check', {
+      params: {
+        address: mixedCaseAddress.toLowerCase(),
+        guildId: 'guild_1',
+        resourceId: 'resource_1',
+      },
+      timeoutMs: 750,
+      retry: undefined,
+    });
   });
 });

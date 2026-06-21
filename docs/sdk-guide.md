@@ -134,13 +134,22 @@ that the RPC response decodes to an Ethereum address.
 
 
 
-The default timeout is 10 seconds. You can override this globally or per request (in future versions):
+The default timeout is 10 seconds. You can override this globally or for an individual service call:
 
 ```typescript
 const client = new GuildPassClient({
   apiUrl: '...',
   timeoutMs: 5000, // 5 seconds
 });
+
+const access = await client.access.checkAccess(params, {
+  timeoutMs: 1500, // override only this request
+});
+
+const guild = await client.guilds.getGuild(
+  { guildId: 'prime-guild' },
+  { timeoutMs: 2500 },
+);
 ```
 
 ## Cancellation
