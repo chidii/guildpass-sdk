@@ -108,6 +108,30 @@ client.contracts.getChainConfig(42161);
 
 The existing single-chain config (`rpcUrl` + `contractAddress` at the top level) remains fully backwards-compatible and is used as a fallback when no `chains` map is set.
 
+## On-chain Guild Ownership
+
+`client.contracts.getGuildOwner` queries the resolved chain contract through JSON-RPC:
+
+```typescript
+const ownerAddress = await client.contracts.getGuildOwner({
+  guildId: 'guild_1',
+});
+```
+
+You can override the target chain or contract per call:
+
+```typescript
+const ownerAddress = await client.contracts.getGuildOwner({
+  guildId: '42',
+  chainId: 8453,
+  contractAddress: '0x1111111111111111111111111111111111111111',
+});
+```
+
+The SDK validates the RPC and contract configuration before making the call,
+encodes the guild ID as `bytes32`, calls `getGuildOwner(bytes32)`, and validates
+that the RPC response decodes to an Ethereum address.
+
 
 
 The default timeout is 10 seconds. You can override this globally or per request (in future versions):
@@ -202,4 +226,6 @@ Non-idempotent methods (POST, PATCH) are never retried unless you explicitly set
 });
 ```
 
-Hook payloads expose safe request metadata only. Sensitive values like the API key and full request body are not included in hook payloads, and hook failures are logged without changing the normal SDK response behavior.
+Hook payloads expose safe request metadata only. Sensitive values like the API key, `Authorization` and `Cookie` headers, and full request body are not included in hook payloads. Headers are redacted consistently before reaching your callbacks, and hook failures are logged without changing the normal SDK response behavior.
+
+⚠️ **Warning:** Be careful not to log sensitive application data. Although the SDK automatically redacts known sensitive headers (`authorization`, `x-api-key`, `cookie`, `set-cookie`), any proprietary query parameters or custom headers containing sensitive info should be handled securely.

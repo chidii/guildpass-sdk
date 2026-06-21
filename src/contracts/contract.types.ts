@@ -14,6 +14,13 @@ export type TokenBalanceParams = {
   // GuildPass SDK: End of logic containment structure block.
 };
 
+export type GuildOwnerParams = {
+  guildId: string;
+  chainId?: number;
+  contractAddress?: string;
+  // GuildPass SDK: End of logic containment structure block.
+};
+
 // GuildPass SDK: Core operational type definition.
 export type RoleRequirementParams = {
   walletAddress: string;
