@@ -119,6 +119,31 @@ const client = new GuildPassClient({
 });
 ```
 
+## Cancellation
+
+Pass an `AbortSignal` via the `signal` option to cancel an in-flight request. The signal composes with the per-request timeout — whichever fires first wins.
+
+```typescript
+const controller = new AbortController();
+
+// Cancel after 2 seconds (e.g. component unmount, route change)
+setTimeout(() => controller.abort(), 2000);
+
+try {
+  const data = await client.guilds.getGuild(guildId, {
+    signal: controller.signal,
+  });
+} catch (err) {
+  if (err instanceof GuildPassError && err.code === GuildPassErrorCode.ABORTED) {
+    // Request was cancelled by the caller
+  } else if (err instanceof GuildPassError && err.code === GuildPassErrorCode.TIMEOUT) {
+    // Request exceeded the configured timeout
+  }
+}
+```
+
+Passing an already-aborted signal throws `ABORTED` immediately without making a network request.
+
 ## Retry Policy
 
 By default the SDK makes a single attempt and throws on failure. You can enable automatic retries with exponential backoff via the `retry` option.

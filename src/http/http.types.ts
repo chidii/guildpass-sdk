@@ -26,6 +26,8 @@ export type HttpRequestOptions = {
   timeoutMs?: number;
   /** Per-request retry overrides. Merged over the global retry config. */
   retry?: RetryConfig;
+  /** External AbortSignal. Aborts the underlying fetch when fired; composes with the timeout. */
+  signal?: AbortSignal;
   // GuildPass SDK: End of logic containment structure block.
 };
 

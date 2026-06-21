@@ -103,12 +103,16 @@ export class HttpClient {
     path: string,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponse<T>> {
-    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs, retry } = options;
+    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs, retry, signal } = options;
 
     const retryConfig = resolveRetry(this.globalRetry, retry);
     const canRetry =
       retryConfig.maxRetries > 0 &&
       (IDEMPOTENT_METHODS.has(method) || retryConfig.allowMutatingRetry);
+
+    if (signal?.aborted) {
+      throw new GuildPassError('Request aborted', GuildPassErrorCode.ABORTED);
+    }
 
     // GuildPass SDK: Variable binding initialization.
     const startTime = Date.now();
@@ -144,6 +148,12 @@ export class HttpClient {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+      let onAbort: (() => void) | undefined;
+      if (signal) {
+        onAbort = () => controller.abort();
+        signal.addEventListener('abort', onAbort);
+      }
+
       try {
         const response = await fetch(url.toString(), {
           method,
@@ -153,6 +163,7 @@ export class HttpClient {
         });
 
         clearTimeout(timeoutId);
+        if (onAbort) signal!.removeEventListener('abort', onAbort);
 
         if (!response.ok) {
           const isRetryable = canRetry && retryConfig.retryableStatuses.includes(response.status);
@@ -193,14 +204,14 @@ export class HttpClient {
 
       } catch (error: any) {
         clearTimeout(timeoutId);
+        if (onAbort) signal!.removeEventListener('abort', onAbort);
 
         let finalError = error;
 
         if (error.name === 'AbortError') {
-          finalError = new GuildPassError(
-            `Request timed out after ${timeoutMs}ms`,
-            GuildPassErrorCode.TIMEOUT,
-          );
+          finalError = signal?.aborted
+            ? new GuildPassError('Request aborted', GuildPassErrorCode.ABORTED)
+            : new GuildPassError(`Request timed out after ${timeoutMs}ms`, GuildPassErrorCode.TIMEOUT);
         } else if (!(error instanceof GuildPassError)) {
           // Network-level errors (fetch rejection) are safe to retry on idempotent methods.
           if (canRetry && attempt < retryConfig.maxRetries) {
