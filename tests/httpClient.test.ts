@@ -9,14 +9,48 @@ import { GuildPassErrorCode } from '../src/errors/errorCodes';
 describe('HttpClient', () => {
   const baseUrl = 'https://api.test.com';
   let client: HttpClient;
+  let mockFetch: any;
 
   beforeEach(() => {
-    client = new HttpClient(baseUrl);
-    vi.stubGlobal('fetch', vi.fn());
+    mockFetch = vi.fn();
+    client = new HttpClient(baseUrl, undefined, 10000, {fetch: mockFetch});
+    // GuildPass SDK: End of logic containment structure block.
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  // GuildPass SDK: Validate unit assertion test case.
+  it('should use custom fetch implementation if provided', async () => {
+    const customFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: 'custom' }),
+      headers: new Headers(),
+    });
+
+    const clientWithCustomFetch = new HttpClient(baseUrl, undefined, 10000, {fetch: customFetch});
+    const result = await clientWithCustomFetch.get('/custom-path');
+
+    expect(result).toEqual({ data: 'custom' });
+    expect(customFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/custom-path'),
+      expect.any(Object),
+    );
+  });
+
+  it('should throw MISSING_FETCH error if no fetch implementation is available', () => {
+    const originalFetch = globalThis.fetch;
+    // @ts-ignore
+    delete globalThis.fetch;
+
+    try {
+      expect(() => new HttpClient(baseUrl)).toThrow();
+      try {
+        new HttpClient(baseUrl);
+      } catch (error: any) {
+        expect(error.code).toBe(GuildPassErrorCode.MISSING_FETCH);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('should make GET request with correct URL and headers', async () => {
@@ -31,7 +65,7 @@ describe('HttpClient', () => {
     const result = await client.get('/test-path', { params: { foo: 'bar' } });
 
     expect(result).toEqual(mockResponse);
-    expect(fetch).toHaveBeenCalledWith(
+    expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/test-path?foo=bar'),
       expect.objectContaining({
         method: 'GET',
@@ -79,8 +113,8 @@ describe('HttpClient', () => {
   });
 
   it('should include API key in headers if provided', async () => {
-    const clientWithKey = new HttpClient(baseUrl, 'secret-key');
-    (fetch as any).mockResolvedValue({
+    const clientWithKey = new HttpClient(baseUrl, 'secret-key', 10000, undefined, mockFetch);
+    mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
@@ -89,7 +123,7 @@ describe('HttpClient', () => {
 
     await clientWithKey.get('/test');
 
-    expect(fetch).toHaveBeenCalledWith(
+    expect(mockFetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
@@ -136,7 +170,7 @@ describe('HttpClient', () => {
   });
 
   it('should throw GuildPassError on non-ok response', async () => {
-    (fetch as any).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: false,
       status: 404,
       json: () => Promise.resolve({ error: 'Not Found' }),
@@ -193,7 +227,7 @@ describe('HttpClient', () => {
   });
 
   it('should throw TIMEOUT error on abort', async () => {
-    (fetch as any).mockImplementation(() => {
+    mockFetch.mockImplementation(() => {
       const error = new Error('AbortError');
       error.name = 'AbortError';
       return Promise.reject(error);
@@ -487,17 +521,18 @@ describe('HttpClient retry + hooks together', () => {
 
 describe('HttpClient Hooks', () => {
   const baseUrl = 'https://api.test.com';
+  let mockFetch: any;
 
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn());
+    mockFetch = vi.fn();
   });
 
   it('should call onRequest and onResponse successfully', async () => {
     const onRequest = vi.fn();
     const onResponse = vi.fn();
-    const client = new HttpClient(baseUrl, undefined, 10000, { onRequest, onResponse });
+    const client = new HttpClient(baseUrl, undefined, 10000, { onRequest, onResponse }, mockFetch);
 
-    (fetch as any).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ data: 'ok' }),
@@ -521,11 +556,11 @@ describe('HttpClient Hooks', () => {
 
   it('should call onRequest before the network request is made', async () => {
     const onRequest = vi.fn().mockImplementation(() => {
-      expect(fetch).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
-    const client = new HttpClient(baseUrl, undefined, 10000, { onRequest });
+    const client = new HttpClient(baseUrl, undefined, 10000, { onRequest }, mockFetch);
 
-    (fetch as any).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ data: 'ok' }),
@@ -535,15 +570,15 @@ describe('HttpClient Hooks', () => {
     await client.get('/ordering-test');
 
     expect(onRequest).toHaveBeenCalledTimes(1);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it('should not expose sensitive request details in hook payloads', async () => {
     const onRequest = vi.fn();
     const onResponse = vi.fn();
-    const client = new HttpClient(baseUrl, 'secret-key', 10000, { onRequest, onResponse });
+    const client = new HttpClient(baseUrl, 'secret-key', 10000, { onRequest, onResponse, fetch: mockFetch });
 
-    (fetch as any).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
@@ -570,9 +605,9 @@ describe('HttpClient Hooks', () => {
 
   it('should call onError when request fails and normalise error', async () => {
     const onError = vi.fn();
-    const client = new HttpClient(baseUrl, undefined, 10000, { onError });
+    const client = new HttpClient(baseUrl, undefined, 10000, { onError }, mockFetch);
 
-    (fetch as any).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: false,
       status: 403,
       json: () => Promise.resolve({ error: 'Forbidden' }),
@@ -599,11 +634,11 @@ describe('HttpClient Hooks', () => {
     const onResponse = vi.fn().mockImplementation(() => {
       throw new Error('Hook failed sync');
     });
-    const client = new HttpClient(baseUrl, undefined, 10000, { onRequest, onResponse });
+    const client = new HttpClient(baseUrl, undefined, 10000, { onRequest, onResponse }, mockFetch);
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    (fetch as any).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ success: true }),
@@ -613,7 +648,6 @@ describe('HttpClient Hooks', () => {
     const result = await client.get('/survive-hook');
     expect(result).toEqual({ success: true });
     expect(consoleSpy).toHaveBeenCalledTimes(2);
-
     consoleSpy.mockRestore();
   });
 });
