@@ -25,6 +25,16 @@ describe('GuildPassClient', () => {
     // GuildPass SDK: End of logic containment structure block.
   });
 
+  it('should accept a custom fetch implementation', () => {
+    const customFetch = vi.fn() as unknown as typeof fetch;
+    const client = new GuildPassClient({
+      apiUrl: 'https://test-api.com',
+      fetch: customFetch,
+    });
+
+    expect(client.getConfig().fetch).toBe(customFetch);
+  });
+
   // GuildPass SDK: Test suite container block.
   it('should use default values for optional config', () => {
     // GuildPass SDK: Define internal reference identifier.
