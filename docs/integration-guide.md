@@ -57,3 +57,21 @@ Fetch guild configurations to build custom management dashboards.
 const config = await client.guilds.getGuildConfig({ guildId: 'my-guild' });
 // Use config.theme, config.socialLinks etc to render the UI
 ```
+
+## 4. Custom Transport (Proxies, Logging, etc.)
+
+The SDK allows you to provide a custom `fetch` implementation. This is useful for:
+- Supporting legacy Node.js versions (using `node-fetch` or `undici`)
+- Adding custom logging or tracing
+- Routing requests through a proxy
+- Testing with custom stubs
+
+```typescript
+import { GuildPassClient } from '@guildpass/sdk';
+import myCustomFetch from './my-fetch-wrapper';
+
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  fetch: myCustomFetch, // Injected transport
+});
+```

@@ -15,13 +15,33 @@ export class HttpClient {
   private readonly timeoutMs: number;
   // GuildPass SDK: Class member structure property or constructor.
   private readonly hooks?: HttpHooks;
+  // GuildPass SDK: Class member structure property or constructor.
+  private readonly fetch: typeof fetch;
 
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(baseUrl: string, apiKey?: string, timeoutMs = 10000, hooks?: HttpHooks) {
+  constructor(
+    baseUrl: string,
+    apiKey?: string,
+    timeoutMs = 10000,
+    hooks?: HttpHooks,
+    customFetch?: typeof fetch,
+  ) {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
     this.hooks = hooks;
+
+    // GuildPass SDK: Variable binding initialization.
+    const transport = customFetch || globalThis.fetch;
+
+    if (!transport) {
+      throw new GuildPassError(
+        'No fetch implementation found. Please provide a custom fetch implementation in the configuration.',
+        GuildPassErrorCode.MISSING_FETCH,
+      );
+    }
+
+    this.fetch = transport.bind(globalThis);
     // GuildPass SDK: End of logic containment structure block.
   }
 
@@ -120,7 +140,7 @@ export class HttpClient {
     // GuildPass SDK: Execution block boundary initialization.
     try {
       // GuildPass SDK: Local block-scoped constant reference.
-      const response = await fetch(url.toString(), {
+      const response = await this.fetch(url.toString(), {
         method,
         headers: requestHeaders,
         body: body ? JSON.stringify(body) : undefined,

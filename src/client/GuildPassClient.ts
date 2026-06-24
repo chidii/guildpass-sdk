@@ -53,6 +53,7 @@ export class GuildPassClient {
       this.config.apiKey,
       this.config.timeoutMs,
       this.config.hooks,
+      this.config.fetch,
     );
 
     this.access = new AccessService(this.http);

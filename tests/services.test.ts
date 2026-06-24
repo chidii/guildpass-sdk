@@ -3,16 +3,20 @@ import { GuildPassClient } from '../src/client/GuildPassClient';
 
 describe('Service Modules', () => {
   let client: GuildPassClient;
+  let mockFetch: any;
 
   beforeEach(() => {
-    client = new GuildPassClient({ apiUrl: 'https://api.test.com' });
-    vi.stubGlobal('fetch', vi.fn());
+    mockFetch = vi.fn();
+    client = new GuildPassClient({
+      apiUrl: 'https://api.test.com',
+      fetch: mockFetch,
+    });
   });
 
   describe('AccessService', () => {
     it('should call checkAccess endpoint', async () => {
       const mockResult = { hasAccess: true, matchedRoles: ['admin'] };
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockResult),
@@ -26,7 +30,7 @@ describe('Service Modules', () => {
       });
 
       expect(result).toEqual(mockResult);
-      expect(fetch).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/access/check'),
         expect.any(Object),
       );
@@ -36,7 +40,7 @@ describe('Service Modules', () => {
   describe('MembershipService', () => {
     it('should call membership endpoint', async () => {
       const mockMembership = { isActive: true, roles: ['member'] };
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockMembership),
@@ -55,7 +59,7 @@ describe('Service Modules', () => {
   describe('RolesService', () => {
     it('should fetch roles for a guild', async () => {
       const mockRoles = [{ id: '1', name: 'Role 1' }];
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockRoles),
@@ -64,7 +68,7 @@ describe('Service Modules', () => {
 
       const result = await client.roles.getRoles({ guildId: 'guild_1' });
       expect(result).toEqual(mockRoles);
-      expect(fetch).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/guilds/guild_1/roles'),
         expect.any(Object),
       );
@@ -72,7 +76,7 @@ describe('Service Modules', () => {
 
     it('should URL-encode guild IDs in role endpoint paths', async () => {
       const mockRoles = [{ id: '1', name: 'Role 1' }];
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockRoles),
@@ -81,7 +85,7 @@ describe('Service Modules', () => {
 
       const result = await client.roles.getRoles({ guildId: 'guild/1' });
       expect(result).toEqual(mockRoles);
-      expect(fetch).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/guilds/guild%2F1/roles'),
         expect.any(Object),
       );
@@ -90,7 +94,7 @@ describe('Service Modules', () => {
     it('should URL-encode wallet addresses and guild IDs in user roles endpoint paths', async () => {
       const mockRoles = [{ id: '1', name: 'Role 1' }];
       const validAddress = '0x' + '1'.repeat(40);
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockRoles),
@@ -99,7 +103,7 @@ describe('Service Modules', () => {
 
       const result = await client.roles.getUserRoles({ guildId: 'guild/1', walletAddress: validAddress });
       expect(result).toEqual(mockRoles);
-      expect(fetch).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining(`/guilds/guild%2F1/members/${validAddress}/roles`),
         expect.any(Object),
       );
@@ -109,7 +113,7 @@ describe('Service Modules', () => {
   describe('GuildsService', () => {
     it('should fetch guild info', async () => {
       const mockGuild = { id: 'guild_1', name: 'Test Guild' };
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockGuild),
@@ -122,7 +126,7 @@ describe('Service Modules', () => {
 
     it('should URL-encode guild IDs in guild endpoint paths', async () => {
       const mockGuild = { id: 'guild/1', name: 'Encoded Guild' };
-      (fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve(mockGuild),
@@ -131,7 +135,7 @@ describe('Service Modules', () => {
 
       const result = await client.guilds.getGuild({ guildId: 'guild/1' });
       expect(result).toEqual(mockGuild);
-      expect(fetch).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/guilds/guild%2F1'),
         expect.any(Object),
       );

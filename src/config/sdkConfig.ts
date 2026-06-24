@@ -10,5 +10,6 @@ export type GuildPassClientConfig = {
   apiKey?: string;
   timeoutMs?: number;
   hooks?: HttpHooks;
+  fetch?: typeof fetch;
   // GuildPass SDK: End of logic containment structure block.
 };

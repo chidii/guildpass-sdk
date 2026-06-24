@@ -1,5 +1,5 @@
 // GuildPass SDK: Pull in package or module bindings.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 // GuildPass SDK: Import external module dependencies.
 import { GuildPassClient } from '../src/client/GuildPassClient';
 
@@ -21,6 +21,16 @@ describe('GuildPassClient', () => {
     expect(client.getConfig().chainId).toBe(137);
     expect(client.getConfig().apiKey).toBe('test-key');
     // GuildPass SDK: End of logic containment structure block.
+  });
+
+  it('should accept a custom fetch implementation', () => {
+    const customFetch = vi.fn() as unknown as typeof fetch;
+    const client = new GuildPassClient({
+      apiUrl: 'https://test-api.com',
+      fetch: customFetch,
+    });
+
+    expect(client.getConfig().fetch).toBe(customFetch);
   });
 
   // GuildPass SDK: Test suite container block.
