@@ -363,25 +363,25 @@ describe('HttpClient', () => {
       controller.abort();
 
       await expect(client.get('/cancel', { signal: controller.signal })).rejects.toMatchObject({
-        code: GuildPassErrorCode.ABORTED,
+        code: GuildPassErrorCode.REQUEST_CANCELLED,
       });
       expect(fetch).not.toHaveBeenCalled();
     });
 
-    it('throws ABORTED when an external signal fires during fetch', async () => {
-      const externalController = new AbortController();
+    it('throws REQUEST_CANCELLED when an external signal fires during fetch', async () => {
+      const controller = new AbortController();
 
       (fetch as any).mockImplementation(() => {
-        externalController.abort();
+        controller.abort();
         const error = new Error('AbortError');
         error.name = 'AbortError';
         return Promise.reject(error);
       });
 
       await expect(
-        client.get('/cancel', { signal: externalController.signal }),
+        client.get('/cancel', { signal: controller.signal }),
       ).rejects.toMatchObject({
-        code: GuildPassErrorCode.ABORTED,
+        code: GuildPassErrorCode.REQUEST_CANCELLED,
       });
     });
 
@@ -396,37 +396,6 @@ describe('HttpClient', () => {
         code: GuildPassErrorCode.TIMEOUT,
       });
     });
-  });
-
-  it('should throw REQUEST_CANCELLED when external signal is already aborted', async () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    try {
-      await client.get('/cancelled', { signal: controller.signal });
-      expect.fail('Should have thrown');
-    } catch (error: any) {
-      expect(error.code).toBe(GuildPassErrorCode.REQUEST_CANCELLED);
-      expect(error.message).toContain('cancelled by caller');
-    }
-  });
-
-  it('should throw REQUEST_CANCELLED when external signal is aborted during request', async () => {
-    const controller = new AbortController();
-
-    (fetch as any).mockImplementation(() => {
-      controller.abort();
-      const error = new Error('AbortError');
-      error.name = 'AbortError';
-      return Promise.reject(error);
-    });
-
-    try {
-      await client.get('/cancelled', { signal: controller.signal });
-      expect.fail('Should have thrown');
-    } catch (error: any) {
-      expect(error.code).toBe(GuildPassErrorCode.REQUEST_CANCELLED);
-    }
   });
 });
 
