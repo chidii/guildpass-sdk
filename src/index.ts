@@ -1,12 +1,16 @@
 // Main Client
 export * from './client/GuildPassClient';
 
+// Cache
+export * from './cache/cache.types';
+
 // Services
 export * from './access/access.service';
 export * from './membership/membership.service';
 export * from './roles/roles.service';
 export * from './guilds/guilds.service';
 export * from './contracts/contractClient';
+export * from './contracts/contract.types';
 
 // Types
 export * from './types';
@@ -24,3 +28,8 @@ export * from './utils/formatting';
 export * from './config/defaultConfig';
 export * from './config/networkConfig';
 export * from './config/sdkConfig';
+
+// Validation
+export * from './validation/responseGuards';
+export * from './validation/assertResponse';
+export * from './wallet/helpers';

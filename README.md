@@ -1,5 +1,7 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/guildpass/brand/main/logo.png" alt="GuildPass Logo" width="120" />
+  <a href="./README.md">
+    <img src="./logo/Guidlpass SDK Logo.png" alt="GuildPass Logo" width="120" />
+  </a>
   <h1>GuildPass SDK</h1>
   <p><strong>The official TypeScript SDK for the GuildPass protocol.</strong></p>
 
@@ -33,6 +35,7 @@ GuildPass is a Web3 membership and access-control protocol designed for token-ga
 - **🛡️ Access Control**: Check wallet access for resources and roles with ease.
 - **💎 Membership Management**: Verify active membership status and user roles.
 - **🏗️ Guild Configuration**: Fetch metadata and custom configurations for any guild.
+- **⚡ Pluggable Caching**: Built-in TTL cache with optional custom adapter support (Redis, etc.).
 - **🧩 Modular Architecture**: Clean service-based design for minimal bundle size.
 - **💪 Type Safe**: First-class TypeScript support with comprehensive definitions.
 - **🌐 Universal**: Seamless integration with Node.js, modern browsers, and Edge runtimes.
@@ -81,13 +84,13 @@ if (result.hasAccess) {
 
 The SDK is organized into focused service modules accessible via the main client:
 
-| Module              | Purpose                                              |
-| :------------------ | :--------------------------------------------------- |
-| `client.access`     | Handle resource gating and role-based access checks. |
-| `client.membership` | Query wallet membership status and join dates.       |
-| `client.roles`      | Retrieve available roles and user assignments.       |
-| `client.guilds`     | Fetch guild metadata, themes, and social links.      |
-| `client.contracts`  | Future on-chain interaction stubs (MVP).             |
+| Module              | Purpose                                                        |
+| :------------------ | :------------------------------------------------------------- |
+| `client.access`     | Handle resource gating and role-based access checks.           |
+| `client.membership` | Query wallet membership status and join dates.                 |
+| `client.roles`      | Retrieve available roles and user assignments.                 |
+| `client.guilds`     | Fetch guild metadata, themes, and social links.                |
+| `client.contracts`  | Resolve chain config and read on-chain GuildPass contract data. |
 
 ## ⚙️ Configuration
 
@@ -96,11 +99,104 @@ const client = new GuildPassClient({
   apiUrl: string;           // Base API endpoint
   chainId?: number;         // Default chain (default: 1)
   apiKey?: string;          // Optional API key for restricted access
-  timeoutMs?: number;       // Request timeout (default: 10000)
+  validateResponses?: boolean; // Validate response shapes at runtime (default: false)
+  cache?: CacheAdapter;         // Optional cache adapter (see Caching section below)
+  cacheTtl?: number;            // Default TTL in ms for all cached entries
   rpcUrl?: string;          // Optional RPC provider for on-chain checks
   contractAddress?: string; // Optional default contract address
+  chains?: Record<number, { // Optional per-chain RPC/contract overrides
+    rpcUrl?: string;
+    contractAddress?: string;
+  }>;
 });
 ```
+
+## ⚡ Caching
+
+Passing a `cache` adapter enables transparent memoization of all read operations (access checks, membership, roles, guild metadata). The public API of every service method is **unchanged** — caching is completely invisible to callers.
+
+### Built-in: `InMemoryCacheAdapter`
+
+```typescript
+import { GuildPassClient, InMemoryCacheAdapter } from '@guildpass/sdk';
+
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  cache: new InMemoryCacheAdapter(),
+  cacheTtl: 60_000, // entries expire after 60 s
+});
+
+// First call hits the network; subsequent calls with the same arguments return
+// the cached response instantly.
+const guild = await client.guilds.getGuild({ guildId: 'prime-guild' });
+```
+
+### Custom adapter (e.g. Redis)
+
+Implement the `CacheAdapter` interface and pass it in:
+
+```typescript
+import { CacheAdapter } from '@guildpass/sdk';
+import { createClient } from 'redis';
+
+const redis = createClient();
+await redis.connect();
+
+const redisAdapter: CacheAdapter = {
+  async get<T>(key: string): Promise<T | null> {
+    const raw = await redis.get(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  },
+  async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+    const opts = ttl ? { PX: ttl } : undefined;
+    await redis.set(key, JSON.stringify(value), opts);
+  },
+  async delete(key: string): Promise<void> {
+    await redis.del(key);
+  },
+  async clear(): Promise<void> {
+    await redis.flushDb();
+  },
+};
+
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  cache: redisAdapter,
+  cacheTtl: 30_000,
+});
+```
+
+### Cache invalidation
+
+```typescript
+// Evict all entries tied to a specific guild (e.g. after an admin change).
+await client.invalidateGuildCache('prime-guild');
+
+// Evict all wallet-scoped entries.
+await client.invalidateWalletCache('0x1234...5678');
+
+// Full wipe.
+await client.clearCache();
+```
+
+### Membership token balances
+
+Configure `rpcUrl` and `contractAddress` to query the configured membership token:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  rpcUrl: 'https://mainnet.base.org',
+  contractAddress: '0x0000000000000000000000000000000000000000',
+});
+
+const balance = await client.contracts.getMembershipTokenBalance({
+  walletAddress: '0x1234567890123456789012345678901234567890',
+});
+```
+
+The lookup uses an `eth_call` against `balanceOf(address)` and returns the raw
+token balance as a decimal string.
 
 ## 📚 Documentation
 
@@ -147,7 +243,6 @@ pnpm docs
 - [ ] **On-chain Support**: Native integration with `viem` and `ethers`.
 - [ ] **Auth**: Wallet signature verification (SIWE) helpers.
 - [ ] **React**: Official `@guildpass/react` hooks package.
-- [ ] **Caching**: Pluggable caching layer for high-performance apps.
 
 ## 🤝 Contributing
 
