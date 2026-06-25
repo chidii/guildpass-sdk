@@ -156,12 +156,15 @@ export class GuildPassClient {
   // ---------------------------------------------------------------------------
 
   /**
-   * Returns the current SDK configuration.
+   * Returns the current SDK configuration without sensitive values.
    */
   // GuildPass SDK: Class member structure property or constructor.
   public getConfig(): GuildPassClientConfig {
+    const safeConfig = { ...this.config };
+    delete safeConfig.apiKey;
+
     // GuildPass SDK: Send back computed results to the caller.
-    return { ...this.config };
+    return safeConfig;
     // GuildPass SDK: End of logic containment structure block.
   }
 

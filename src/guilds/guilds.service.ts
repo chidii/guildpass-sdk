@@ -1,7 +1,6 @@
 // GuildPass SDK: Import external module dependencies.
 import { HttpClient } from '../http/httpClient';
 // GuildPass SDK: Pull in package or module bindings.
-import { RequestOptions } from '../http/http.types';
 import { validateGuildId } from '../utils/validation';
 import { encodePathSegment } from '../utils/formatting';
 import { assertValidResponse } from '../validation/assertResponse';

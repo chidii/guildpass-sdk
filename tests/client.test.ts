@@ -21,7 +21,7 @@ describe('GuildPassClient', () => {
 
     expect(client.getConfig().apiUrl).toBe('https://test-api.com');
     expect(client.getConfig().chainId).toBe(137);
-    expect(client.getConfig().apiKey).toBe('test-key');
+    expect(client.getConfig().apiKey).toBeUndefined();
     // GuildPass SDK: End of logic containment structure block.
   });
 
@@ -69,6 +69,7 @@ describe('GuildPassClient', () => {
     vi.stubGlobal('fetch', globalFetch);
     const client = new GuildPassClient({
       apiUrl: 'https://test-api.com',
+      apiKey: 'test-key',
       fetch: transport,
     });
 
@@ -80,6 +81,12 @@ describe('GuildPassClient', () => {
 
     expect(result).toEqual({ hasAccess: true });
     expect(transport).toHaveBeenCalled();
+    expect(transport).toHaveBeenCalledWith(
+      expect.stringContaining('/access/check'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'test-key' }),
+      }),
+    );
     expect(globalFetch).not.toHaveBeenCalled();
   });
   // GuildPass SDK: End of logic containment structure block.

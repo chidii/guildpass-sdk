@@ -6,5 +6,16 @@ export * from '../guilds/guilds.types';
 export * from '../contracts/contract.types';
 export * from '../config/sdkConfig';
 export * from '../config/networkConfig';
-export * from '../http/http.types';
+export type {
+  ErrorHookPayload,
+  FetchLike,
+  HttpClientConfig,
+  HttpHooks,
+  HttpMethod,
+  HttpRequestOptions,
+  HttpResponse,
+  RequestHookPayload,
+  ResponseHookPayload,
+  RetryConfig,
+} from '../http/http.types';
 export * from '../errors/errorCodes';

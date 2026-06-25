@@ -21,7 +21,8 @@ new GuildPassClient(config: GuildPassClientConfig)
 
 ### Methods
 
-- `getConfig()`: Returns the current configuration.
+- `getConfig()`: Returns the current non-sensitive configuration. Sensitive
+  values such as `apiKey` are omitted from this public snapshot.
 
 ---
 

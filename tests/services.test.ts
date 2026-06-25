@@ -4,50 +4,6 @@ import { GuildPassError } from '../src/errors/GuildPassError';
 import { GuildPassErrorCode } from '../src/errors/errorCodes';
 import apiContract from './fixtures/api-contract.json';
 
-function validateContract(
-  module: string,
-  method: string,
-  actualRequest: { path: string; method: string; query?: Record<string, any>; body?: any },
-  actualResponse: any,
-  isError: boolean = false
-) {
-  const contract = (apiContract as any)[module]?.[method];
-  if (!contract) {
-    throw new Error(`Contract definition not found for ${module}.${method}`);
-  }
-
-  const { request: expectedReq, response: expectedResp } = contract;
-
-  // 1. Validate request method & path
-  expect(actualRequest.method.toUpperCase()).toBe(expectedReq.method.toUpperCase());
-  const cleanPath = actualRequest.path.split('?')[0];
-  expect(cleanPath).toBe(expectedReq.path);
-
-  // 2. Validate query parameter keys
-  if (expectedReq.query) {
-    const actualQueryKeys = Object.keys(actualRequest.query || {});
-    expectedReq.query.forEach((key: string) => {
-      expect(actualQueryKeys).toContain(key);
-    });
-  }
-
-  // 3. Validate body keys if expected
-  if (expectedReq.body) {
-    Object.keys(expectedReq.body).forEach((key) => {
-      expect(actualRequest.body).toHaveProperty(key);
-    });
-  }
-
-  // 4. Validate Response Shape matches expectations
-  const expectedShape = isError ? expectedResp.error : expectedResp.success;
-  expect(expectedShape).toBeDefined();
-
-  Object.keys(expectedShape).forEach((key) => {
-    expect(actualResponse).toHaveProperty(key);
-    expect(typeof actualResponse[key]).toBe(typeof expectedShape[key]);
-  });
-}
-
 function mockJsonResponse(body: unknown) {
   (fetch as any).mockResolvedValue({
     ok: true,
@@ -63,6 +19,7 @@ describe('Service Modules', () => {
 
   beforeEach(() => {
     mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
     client = new GuildPassClient({
       apiUrl: 'https://api.test.com',
       fetch: mockFetch,
