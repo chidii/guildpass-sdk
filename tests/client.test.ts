@@ -21,7 +21,7 @@ describe('GuildPassClient', () => {
 
     expect(client.getConfig().apiUrl).toBe('https://test-api.com');
     expect(client.getConfig().chainId).toBe(137);
-    expect(client.getConfig().apiKey).toBeUndefined();
+    expect('apiKey' in client.getConfig()).toBe(false);
     // GuildPass SDK: End of logic containment structure block.
   });
 
