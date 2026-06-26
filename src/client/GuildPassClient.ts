@@ -156,13 +156,13 @@ export class GuildPassClient {
   // ---------------------------------------------------------------------------
 
   /**
-   * Returns the current SDK configuration.
+   * Returns the current SDK configuration without sensitive values.
+   * Sensitive fields such as `apiKey` are omitted from this public snapshot.
+   * The SDK continues to use the real API key internally for authenticated requests.
    */
-  // GuildPass SDK: Class member structure property or constructor.
-  public getConfig(): GuildPassClientConfig {
-    // GuildPass SDK: Send back computed results to the caller.
-    return { ...this.config };
-    // GuildPass SDK: End of logic containment structure block.
+  public getConfig(): Omit<GuildPassClientConfig, 'apiKey'> {
+    const { apiKey: _redacted, ...safeConfig } = this.config;
+    return safeConfig;
   }
 
   // ---------------------------------------------------------------------------
