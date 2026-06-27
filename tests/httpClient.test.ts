@@ -24,7 +24,7 @@ describe('HttpClient', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({ data: 'custom' }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     const clientWithCustomFetch = new HttpClient(baseUrl, undefined, 10000, {fetch: customFetch});
@@ -57,7 +57,7 @@ describe('HttpClient', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(mockResponse),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     const result = await client.get('/test-path', { params: { foo: 'bar' } });
@@ -77,7 +77,7 @@ describe('HttpClient', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({ via: 'custom-transport' }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
     const globalFetch = vi.fn();
     vi.stubGlobal('fetch', globalFetch);
@@ -116,7 +116,7 @@ describe('HttpClient', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     await clientWithKey.get('/test');
@@ -135,7 +135,7 @@ describe('HttpClient', () => {
       ok: true,
       status: 204,
       json,
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     await expect(client.get('/empty')).resolves.toBeUndefined();
@@ -167,17 +167,100 @@ describe('HttpClient', () => {
     await expect(client.get('/json')).resolves.toEqual(mockResponse);
   });
 
+  it('should throw INVALID_RESPONSE for successful HTML responses', async () => {
+    const json = vi.fn(() => Promise.resolve('<html>ok</html>'));
+    (fetch as any).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json,
+      headers: new Headers({ 'Content-Type': 'text/html; charset=utf-8' }),
+    });
+
+    await expect(client.get('/html')).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_RESPONSE,
+      status: 200,
+      details: expect.objectContaining({
+        reason: 'unexpected_content_type',
+        contentType: 'text/html; charset=utf-8',
+      }),
+    });
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it('should throw INVALID_RESPONSE for malformed JSON success responses', async () => {
+    (fetch as any).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+    });
+
+    await expect(client.get('/bad-json')).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_RESPONSE,
+      status: 200,
+      message: 'Invalid response: received malformed JSON',
+      details: expect.objectContaining({
+        reason: 'malformed_json',
+        contentType: 'application/json',
+      }),
+    });
+  });
+
   it('should throw GuildPassError on non-ok response', async () => {
     mockFetch.mockResolvedValue({
       ok: false,
       status: 404,
       json: () => Promise.resolve({ error: 'Not Found' }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     await expect(client.get('/not-found')).rejects.toMatchObject({
       code: GuildPassErrorCode.NOT_FOUND,
       status: 404,
+    });
+  });
+
+  it('should return a safe GuildPassError for non-JSON error responses', async () => {
+    const json = vi.fn();
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      json,
+      headers: new Headers({ 'Content-Type': 'text/plain' }),
+    });
+
+    await expect(client.get('/plain-error')).rejects.toMatchObject({
+      code: GuildPassErrorCode.SERVER_ERROR,
+      status: 502,
+      message: 'Endpoint returned a non-JSON error response',
+      details: expect.objectContaining({
+        code: GuildPassErrorCode.INVALID_RESPONSE,
+        meta: expect.objectContaining({
+          contentType: 'text/plain',
+        }),
+      }),
+    });
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it('should return a safe GuildPassError for malformed JSON error responses', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+    });
+
+    await expect(client.get('/malformed-error')).rejects.toMatchObject({
+      code: GuildPassErrorCode.SERVER_ERROR,
+      status: 500,
+      message: 'Endpoint returned malformed JSON in an error response',
+      details: expect.objectContaining({
+        code: GuildPassErrorCode.INVALID_RESPONSE,
+        meta: expect.objectContaining({
+          contentType: 'application/json',
+        }),
+      }),
     });
   });
 
@@ -187,13 +270,13 @@ describe('HttpClient', () => {
         ok: false,
         status: 400,
         json: () => Promise.resolve({ message: 'Invalid payload' }),
-        headers: new Headers(),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
       })
       .mockResolvedValueOnce({
         ok: false,
         status: 409,
         json: () => Promise.resolve({ code: 'ALREADY_EXISTS', message: 'Conflict occurred' }),
-        headers: new Headers(),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
       });
 
     await expect(client.get('/bad-request')).rejects.toMatchObject({
@@ -214,7 +297,7 @@ describe('HttpClient', () => {
       ok: false,
       status: 422,
       json: () => Promise.resolve({ errors: [{ message: 'Name is required' }, { message: 'Email invalid' }] }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     await expect(client.get('/validate')).rejects.toMatchObject({
@@ -247,13 +330,13 @@ describe('HttpClient', () => {
         .mockResolvedValueOnce({
           ok: false,
           status: 503,
-          headers: new Headers(),
+          headers: new Headers({ 'Content-Type': 'application/json' }),
           json: () => Promise.resolve(null),
         })
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          headers: new Headers(),
+          headers: new Headers({ 'Content-Type': 'application/json' }),
           json: () => Promise.resolve({ ok: true }),
         });
 
@@ -272,7 +355,7 @@ describe('HttpClient', () => {
       (fetch as any).mockResolvedValue({
         ok: false,
         status: 503,
-        headers: new Headers(),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
         json: () => Promise.resolve(null),
       });
 
@@ -289,7 +372,7 @@ describe('HttpClient', () => {
       (fetch as any).mockResolvedValue({
         ok: false,
         status: 404,
-        headers: new Headers(),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
         json: () => Promise.resolve(null),
       });
 
@@ -308,7 +391,7 @@ describe('HttpClient', () => {
       (fetch as any).mockResolvedValue({
         ok: false,
         status: 503,
-        headers: new Headers(),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
         json: () => Promise.resolve(null),
       });
 
@@ -323,13 +406,13 @@ describe('HttpClient', () => {
         .mockResolvedValueOnce({
           ok: false,
           status: 503,
-          headers: new Headers(),
+          headers: new Headers({ 'Content-Type': 'application/json' }),
           json: () => Promise.resolve(null),
         })
         .mockResolvedValueOnce({
           ok: true,
           status: 201,
-          headers: new Headers(),
+          headers: new Headers({ 'Content-Type': 'application/json' }),
           json: () => Promise.resolve({ id: 1 }),
         });
 
@@ -358,7 +441,7 @@ describe('HttpClient', () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          headers: new Headers(),
+          headers: new Headers({ 'Content-Type': 'application/json' }),
           json: () => Promise.resolve({ ok: true }),
         });
 
@@ -377,7 +460,7 @@ describe('HttpClient', () => {
       (fetch as any).mockResolvedValue({
         ok: false,
         status: 503,
-        headers: new Headers(),
+        headers: new Headers({ 'Content-Type': 'application/json' }),
         json: () => Promise.resolve(null),
       });
 
@@ -454,7 +537,7 @@ describe('HttpClient retry + hooks together', () => {
 
     (fetch as any)
       .mockResolvedValueOnce({
-        ok: false, status: 503, headers: new Headers(), json: () => Promise.resolve(null),
+        ok: false, status: 503, headers: new Headers({ 'Content-Type': 'application/json' }), json: () => Promise.resolve(null),
       })
       .mockResolvedValueOnce({
         ok: true, status: 200,
@@ -485,7 +568,7 @@ describe('HttpClient retry + hooks together', () => {
     });
 
     (fetch as any).mockResolvedValue({
-      ok: false, status: 503, headers: new Headers(),
+      ok: false, status: 503, headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ message: 'still down' }),
     });
 
@@ -504,10 +587,10 @@ describe('HttpClient retry + hooks together', () => {
 
     (fetch as any)
       .mockResolvedValueOnce({
-        ok: false, status: 503, headers: new Headers(), json: () => Promise.resolve(null),
+        ok: false, status: 503, headers: new Headers({ 'Content-Type': 'application/json' }), json: () => Promise.resolve(null),
       })
       .mockResolvedValueOnce({
-        ok: true, status: 200, headers: new Headers(), json: () => Promise.resolve({ ok: true }),
+        ok: true, status: 200, headers: new Headers({ 'Content-Type': 'application/json' }), json: () => Promise.resolve({ ok: true }),
       });
 
     const result = await client.get('/flaky');
@@ -537,7 +620,7 @@ describe('HttpClient Hooks', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({ data: 'ok' }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     await client.get('/hook-test');
@@ -568,7 +651,7 @@ describe('HttpClient Hooks', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({ data: 'ok' }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     await client.get('/ordering-test');
@@ -621,6 +704,7 @@ describe('HttpClient Hooks', () => {
       ok: false,
       status: 403,
       json: () => Promise.resolve({ error: 'Forbidden' }),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     try {
@@ -655,7 +739,7 @@ describe('HttpClient Hooks', () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({ success: true }),
-      headers: new Headers(),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     });
 
     const result = await client.get('/survive-hook');

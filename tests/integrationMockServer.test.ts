@@ -174,7 +174,8 @@ describe('GuildPassClient mock API integration', () => {
     const client = new GuildPassClient({ apiUrl: baseUrl });
 
     await expect(client.guilds.getGuild({ guildId: '../public/malformed' })).rejects.toMatchObject({
-      code: GuildPassErrorCode.HTTP_ERROR,
+      code: GuildPassErrorCode.INVALID_RESPONSE,
+      status: 200,
     });
   });
 

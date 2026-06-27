@@ -19,7 +19,7 @@ const SENSITIVE_HEADERS = new Set(['authorization', 'x-api-key', 'cookie', 'set-
 
 export function redactHeaders(headers: Headers | Record<string, string>): Record<string, string> {
   const redacted: Record<string, string> = {};
-  
+
   if (headers instanceof Headers) {
     headers.forEach((value, key) => {
       redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value;
@@ -72,18 +72,79 @@ function isHooksConfig(config: RetryConfig | HttpHooks | HttpClientConfig): conf
   return 'onRequest' in config || 'onResponse' in config || 'onError' in config;
 }
 
-async function parseSuccessResponse<T>(response: Response): Promise<T> {
-  if (response.status === 204 || response.status === 205 || response.headers.get('Content-Length') === '0') {
-    return undefined as T;
-  }
+function isJsonContentType(contentType: string | null): boolean {
+  if (!contentType) return true;
+  return contentType.toLowerCase().includes('application/json');
+}
 
+function buildInvalidResponseError(
+  response: Response,
+  reason: 'unexpected_content_type' | 'malformed_json',
+): GuildPassError {
+  const contentType = response.headers.get('Content-Type');
+  const message = reason === 'unexpected_content_type'
+    ? `Invalid response: expected JSON but received ${contentType || 'unknown content type'}`
+    : 'Invalid response: received malformed JSON';
+
+  return new GuildPassError(
+    message,
+    GuildPassErrorCode.INVALID_RESPONSE,
+    response.status,
+    {
+      reason,
+      contentType,
+    },
+  );
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
   try {
     return await response.json() as T;
   } catch (error) {
     if (isEmptyJsonBodyError(error)) {
       return undefined as T;
     }
-    throw error;
+    throw buildInvalidResponseError(response, 'malformed_json');
+  }
+}
+
+async function parseSuccessResponse<T>(response: Response): Promise<T> {
+  if (response.status === 204 || response.status === 205 || response.headers.get('Content-Length') === '0') {
+    return undefined as T;
+  }
+
+  if (!isJsonContentType(response.headers.get('Content-Type'))) {
+    throw buildInvalidResponseError(response, 'unexpected_content_type');
+  }
+
+  return parseJsonResponse<T>(response);
+}
+
+async function parseErrorResponse(response: Response): Promise<unknown> {
+  if (response.status === 204 || response.status === 205 || response.headers.get('Content-Length') === '0') {
+    return null;
+  }
+
+  if (!isJsonContentType(response.headers.get('Content-Type'))) {
+    return {
+      code: GuildPassErrorCode.INVALID_RESPONSE,
+      message: 'Endpoint returned a non-JSON error response',
+      meta: {
+        contentType: response.headers.get('Content-Type'),
+      },
+    };
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    return {
+      code: GuildPassErrorCode.INVALID_RESPONSE,
+      message: 'Endpoint returned malformed JSON in an error response',
+      meta: {
+        contentType: response.headers.get('Content-Type'),
+      },
+    };
   }
 }
 
@@ -168,8 +229,8 @@ export class HttpClient {
     }
 
     const startTime = Date.now();
-    const hookPayload: RequestHookPayload = { 
-      method, 
+    const hookPayload: RequestHookPayload = {
+      method,
       path,
       headers: redactHeaders(requestHeaders),
     };
@@ -234,12 +295,7 @@ export class HttpClient {
             continue;
           }
 
-          let errorData;
-          try {
-            errorData = await response.json();
-          } catch {
-            errorData = null;
-          }
+          const errorData = await parseErrorResponse(response);
           throw GuildPassError.fromHttpError(response.status, errorData);
         }
 
@@ -248,9 +304,9 @@ export class HttpClient {
 
         if (this.hooks?.onResponse) {
           try {
-            await this.hooks.onResponse({ 
-              ...hookPayload, 
-              status: response.status, 
+            await this.hooks.onResponse({
+              ...hookPayload,
+              status: response.status,
               durationMs,
               responseHeaders: redactHeaders(response.headers)
             });
