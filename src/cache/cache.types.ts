@@ -3,6 +3,8 @@ export interface CacheAdapter {
   set<T>(key: string, value: T, ttl?: number): Promise<void>;
   delete(key: string): Promise<void>;
   clear(): Promise<void>;
+  /** Delete all entries whose key starts with the given prefix. */
+  deleteByPrefix?(prefix: string): Promise<void>;
 }
 
 interface CacheEntry<T> {
@@ -50,5 +52,13 @@ export class InMemoryCacheAdapter implements CacheAdapter {
 
   async clear(): Promise<void> {
     this.store.clear();
+  }
+
+  async deleteByPrefix(prefix: string): Promise<void> {
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) {
+        this.store.delete(key);
+      }
+    }
   }
 }

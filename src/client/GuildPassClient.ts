@@ -130,7 +130,13 @@ export class GuildPassClient {
       `guilds:getGuild:${guildId}`,
       `guilds:getGuildConfig:${guildId}`,
     ];
-    await Promise.all(prefixes.map((k) => this.cache!.delete(k)));
+    // Use deleteByPrefix if the adapter supports it; otherwise fall back to
+    // exact-key deletion (legacy behaviour that may miss nested entries).
+    if (this.cache.deleteByPrefix) {
+      await Promise.all(prefixes.map((p) => this.cache!.deleteByPrefix!(p)));
+    } else {
+      await Promise.all(prefixes.map((k) => this.cache!.delete(k)));
+    }
   }
 
   /**
@@ -138,12 +144,16 @@ export class GuildPassClient {
    *
    * Useful when a wallet's on-chain state has changed (e.g., token transfer).
    */
-  public async invalidateWalletCache(_walletAddress: string): Promise<void> {
+  public async invalidateWalletCache(walletAddress: string): Promise<void> {
     if (!this.cache) return;
-    // We clear the whole cache since per-address key enumeration requires
-    // knowing all guilds. Use a custom adapter with key-scanning support if
-    // finer granularity is needed.
-    await this.cache.clear();
+    // Use deleteByPrefix to remove only wallet-scoped entries instead of
+    // clearing the entire cache. Falls back to full clear for adapters
+    // that don't support prefix deletion.
+    if (this.cache.deleteByPrefix) {
+      await this.cache.deleteByPrefix(`wallet:${walletAddress}:`);
+    } else {
+      await this.cache.clear();
+    }
   }
 
   /** Clears the entire cache. */

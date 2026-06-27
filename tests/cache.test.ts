@@ -67,6 +67,32 @@ describe('InMemoryCacheAdapter', () => {
     const adapter = new InMemoryCacheAdapter();
     await expect(adapter.delete('ghost')).resolves.toBeUndefined();
   });
+
+  it('deleteByPrefix removes all keys starting with the prefix', async () => {
+    const adapter = new InMemoryCacheAdapter();
+    await adapter.set('access:checkAccess:g1:res1:0xabc', { hasAccess: true });
+    await adapter.set('access:checkAccess:g1:res2:0xdef', { hasAccess: false });
+    await adapter.set('access:checkAccess:g2:res1:0xabc', { hasAccess: true });
+    await adapter.set('unrelated:key', 'keep');
+
+    await adapter.deleteByPrefix('access:checkAccess:g1:');
+
+    expect(await adapter.get('access:checkAccess:g1:res1:0xabc')).toBeNull();
+    expect(await adapter.get('access:checkAccess:g1:res2:0xdef')).toBeNull();
+    // Different guild should NOT be deleted
+    expect(await adapter.get('access:checkAccess:g2:res1:0xabc')).toEqual({ hasAccess: true });
+    // Unrelated key should NOT be deleted
+    expect(await adapter.get('unrelated:key')).toBe('keep');
+  });
+
+  it('deleteByPrefix with no matching keys is a no-op', async () => {
+    const adapter = new InMemoryCacheAdapter();
+    await adapter.set('a', 1);
+    await adapter.set('b', 2);
+    await adapter.deleteByPrefix('nonexistent:');
+    expect(await adapter.get('a')).toBe(1);
+    expect(await adapter.get('b')).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -185,6 +211,60 @@ describe('GuildPassClient – cache integration', () => {
 
   it('invalidateGuildCache removes all guild-scoped keys', async () => {
     const adapter = new InMemoryCacheAdapter();
+    await adapter.set('guilds:getGuild:prime-guild', mockGuild);
+    await adapter.set('roles:getRoles:prime-guild', []);
+
+    const client = new GuildPassClient({ ...BASE_CONFIG, cache: adapter });
+    await client.invalidateGuildCache('prime-guild');
+
+    expect(await adapter.get('guilds:getGuild:prime-guild')).toBeNull();
+    expect(await adapter.get('roles:getRoles:prime-guild')).toBeNull();
+  });
+
+  it('invalidateGuildCache removes composite-key entries via deleteByPrefix', async () => {
+    const adapter = new InMemoryCacheAdapter();
+    // Composite keys with wallet/resource suffixes (the actual bug)
+    await adapter.set('access:checkAccess:prime-guild:premium-docs:0xabc', { hasAccess: true });
+    await adapter.set('access:checkAccess:prime-guild:basic-docs:0xdef', { hasAccess: false });
+    await adapter.set('access:checkAccess:other-guild:premium-docs:0xabc', { hasAccess: true });
+    await adapter.set('membership:getMembership:prime-guild:0xabc', { member: true });
+    await adapter.set('unrelated:key', 'keep');
+
+    const client = new GuildPassClient({ ...BASE_CONFIG, cache: adapter });
+    await client.invalidateGuildCache('prime-guild');
+
+    // All prime-guild entries with nested keys should be removed
+    expect(await adapter.get('access:checkAccess:prime-guild:premium-docs:0xabc')).toBeNull();
+    expect(await adapter.get('access:checkAccess:prime-guild:basic-docs:0xdef')).toBeNull();
+    expect(await adapter.get('membership:getMembership:prime-guild:0xabc')).toBeNull();
+    // Other guild should NOT be removed
+    expect(await adapter.get('access:checkAccess:other-guild:premium-docs:0xabc')).toEqual({ hasAccess: true });
+    // Unrelated key should NOT be removed
+    expect(await adapter.get('unrelated:key')).toBe('keep');
+  });
+
+  it('invalidateWalletCache uses deleteByPrefix when adapter supports it', async () => {
+    const adapter = new InMemoryCacheAdapter();
+    await adapter.set('wallet:0xabc:balance', 100);
+    await adapter.set('wallet:0xabc:nonce', 5);
+    await adapter.set('wallet:0xdef:balance', 200);
+    await adapter.set('guilds:getGuild:g1', { id: 'g1' });
+
+    const client = new GuildPassClient({ ...BASE_CONFIG, cache: adapter });
+    await client.invalidateWalletCache('0xabc');
+
+    // 0xabc wallet entries removed
+    expect(await adapter.get('wallet:0xabc:balance')).toBeNull();
+    expect(await adapter.get('wallet:0xabc:nonce')).toBeNull();
+    // 0xdef wallet entries preserved
+    expect(await adapter.get('wallet:0xdef:balance')).toBe(200);
+    // Guild cache preserved
+    expect(await adapter.get('guilds:getGuild:g1')).toEqual({ id: 'g1' });
+  });
+
+  it('invalidateGuildCache falls back to exact delete for adapters without deleteByPrefix', async () => {
+    const adapter = buildMockAdapter();
+    // Only set exact-prefix keys (legacy behavior)
     await adapter.set('guilds:getGuild:prime-guild', mockGuild);
     await adapter.set('roles:getRoles:prime-guild', []);
 
