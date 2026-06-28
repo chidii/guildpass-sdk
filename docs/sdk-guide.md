@@ -175,7 +175,30 @@ The SDK validates the RPC and contract configuration before making the call,
 encodes the guild ID as `bytes32`, calls `getGuildOwner(bytes32)`, and validates
 that the RPC response decodes to an Ethereum address.
 
+## Caching and Request Deduplication
 
+When a cache adapter is configured, the SDK automatically deduplicates concurrent
+identical read requests. This ensures that if multiple callers request the same
+data at the same time, only one network request is issued.
+
+```typescript
+import { GuildPassClient, InMemoryCacheAdapter } from '@guildpass/sdk';
+
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  cache: new InMemoryCacheAdapter(),
+});
+
+// Concurrent identical reads share the same in-flight promise.
+const [g1, g2] = await Promise.all([
+  client.guilds.getGuild({ guildId: 'prime-guild' }),
+  client.guilds.getGuild({ guildId: 'prime-guild' }),
+]); // Only 1 network request is made.
+```
+
+The deduplication is scoped by the full cache key. If a request fails, the
+in-flight promise is removed so that subsequent calls can retry the network
+request.
 
 The default timeout is 10 seconds. You can override this globally or for an individual service call:
 

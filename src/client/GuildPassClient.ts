@@ -69,6 +69,7 @@ export class GuildPassClient {
   private readonly config: GuildPassClientConfig;
   private readonly cache: CacheAdapter | undefined;
   private readonly cacheTtl: number | undefined;
+  private readonly inFlightRequests = new Map<string, Promise<any>>();
 
   // GuildPass SDK: Class member structure property or constructor.
   constructor(config: GuildPassClientConfig) {
@@ -182,9 +183,22 @@ export class GuildPassClient {
   private async withCache<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const cached = await this.cache!.get<T>(key);
     if (cached !== null) return cached;
-    const result = await fn();
-    await this.cache!.set(key, result, this.cacheTtl);
-    return result;
+
+    const inFlight = this.inFlightRequests.get(key);
+    if (inFlight) return inFlight;
+
+    const promise = (async () => {
+      try {
+        const result = await fn();
+        await this.cache!.set(key, result, this.cacheTtl);
+        return result;
+      } finally {
+        this.inFlightRequests.delete(key);
+      }
+    })();
+
+    this.inFlightRequests.set(key, promise);
+    return promise;
   }
 
   private buildCachedAccessService(raw: AccessService): AccessService {
