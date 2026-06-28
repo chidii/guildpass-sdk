@@ -175,6 +175,21 @@ The SDK validates the RPC and contract configuration before making the call,
 encodes the guild ID as `bytes32`, calls `getGuildOwner(bytes32)`, and validates
 that the RPC response decodes to an Ethereum address.
 
+Contract reads inherit the SDK's transport configuration. This means they
+support the same custom `fetch` transport, global `timeoutMs`, and `retry`
+policy as standard API calls.
+
+You can also provide per-call overrides for contract methods:
+
+```typescript
+const owner = await client.contracts.getGuildOwner({
+  guildId: 'guild_1'
+}, {
+  timeoutMs: 2000,
+  retry: { maxRetries: 2 }
+});
+```
+
 ## Caching and Request Deduplication
 
 When a cache adapter is configured, the SDK automatically deduplicates concurrent
@@ -266,11 +281,17 @@ const controller = new AbortController();
 setTimeout(() => controller.abort(), 2000);
 
 try {
-  const data = await client.guilds.getGuild(guildId, {
+  // Standard API call
+  const data = await client.guilds.getGuild({ guildId }, {
     signal: controller.signal,
   });
+
+  // Contract read
+  const balance = await client.contracts.getMembershipTokenBalance({
+    walletAddress: '0x...',
+  }, { signal: controller.signal });
 } catch (err) {
-  if (err instanceof GuildPassError && err.code === GuildPassErrorCode.ABORTED) {
+  if (err instanceof GuildPassError && err.code === GuildPassErrorCode.REQUEST_CANCELLED) {
     // Request was cancelled by the caller
   } else if (err instanceof GuildPassError && err.code === GuildPassErrorCode.TIMEOUT) {
     // Request exceeded the configured timeout

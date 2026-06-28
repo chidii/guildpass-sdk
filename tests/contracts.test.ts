@@ -28,6 +28,69 @@ describe('ContractClient (Stubs)', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
+  it('should support configurable timeout behaviour', async () => {
+    mockFetch().mockImplementation(
+      (_, init) =>
+        new Promise((resolve, reject) => {
+          if (init?.signal) {
+            init.signal.addEventListener('abort', () => {
+              const error = new Error('Aborted');
+              error.name = 'AbortError';
+              reject(error);
+            });
+          }
+        }),
+    );
+
+    const promise = client.contracts.getGuildOwner({ guildId: 'guild_1' }, { timeoutMs: 100 });
+
+    await expect(promise).rejects.toMatchObject({
+      code: GuildPassErrorCode.TIMEOUT,
+      message: expect.stringContaining('timed out after 100ms'),
+    });
+  });
+
+  it('should support external abort signals', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const promise = client.contracts.getGuildOwner({ guildId: 'guild_1' }, { signal: controller.signal });
+
+    await expect(promise).rejects.toMatchObject({
+      code: GuildPassErrorCode.REQUEST_CANCELLED,
+      message: 'Request cancelled by caller',
+    });
+  });
+
+  it('should retry safe transient RPC failures when configured', async () => {
+    mockFetch()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        headers: new Headers(),
+        json: () => Promise.resolve({ error: { message: 'Bad Gateway' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: () =>
+          Promise.resolve({
+            jsonrpc: '2.0',
+            id: 1,
+            result: `0x000000000000000000000000${OWNER.slice(2)}`,
+          }),
+      });
+
+    const owner = await client.contracts.getGuildOwner(
+      { guildId: 'guild_1' },
+      { retry: { maxRetries: 1, baseDelayMs: 10 } },
+    );
+
+    expect(owner).toBe(OWNER);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -36,6 +99,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () =>
         Promise.resolve({
           jsonrpc: '2.0',
@@ -48,10 +112,10 @@ describe('ContractClient (Stubs)', () => {
 
     expect(owner).toBe(OWNER);
     expect(fetch).toHaveBeenCalledWith(
-      RPC_URL,
+      expect.stringMatching(/^https:\/\/rpc\.test\.com\/?$/),
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       }),
     );
 
@@ -67,6 +131,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ result: `0x000000000000000000000000${OWNER.slice(2)}` }),
     });
 
@@ -96,6 +161,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ result: `0x000000000000000000000000${OWNER.slice(2)}` }),
     });
 
@@ -104,7 +170,7 @@ describe('ContractClient (Stubs)', () => {
     ).resolves.toBe(OWNER);
 
     const request = JSON.parse(mockFetch().mock.calls[0][1].body as string);
-    expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/base\.rpc\/?$/), expect.any(Object));
     expect(request.params[0].to).toBe('0x2222222222222222222222222222222222222222');
   });
 
@@ -113,6 +179,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ result: `0x000000000000000000000000${OWNER.slice(2)}` }),
     });
 
@@ -161,6 +228,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ error: { code: -32000, message: 'execution reverted' } }),
     });
 
@@ -175,6 +243,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ result: '0x1234' }),
     });
 
@@ -188,6 +257,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () =>
         Promise.resolve({
           jsonrpc: '2.0',
@@ -200,10 +270,10 @@ describe('ContractClient (Stubs)', () => {
 
     expect(balance).toBe('42');
     expect(fetch).toHaveBeenCalledWith(
-      RPC_URL,
+      expect.stringMatching(/^https:\/\/rpc\.test\.com\/?$/),
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
@@ -237,6 +307,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () =>
         Promise.resolve({
           result: '0x0000000000000000000000000000000000000000000000000000000000000007',
@@ -248,7 +319,7 @@ describe('ContractClient (Stubs)', () => {
     ).resolves.toBe('7');
 
     const request = JSON.parse(mockFetch().mock.calls[0][1].body as string);
-    expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/base\.rpc\/?$/), expect.any(Object));
     expect(request.params[0].to).toBe('0x2222222222222222222222222222222222222222');
   });
 
@@ -257,6 +328,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () =>
         Promise.resolve({
           result: '0x0000000000000000000000000000000000000000000000000000000000000000',
@@ -312,6 +384,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ error: { code: -32000, message: 'execution reverted' } }),
     });
 
@@ -327,6 +400,7 @@ describe('ContractClient (Stubs)', () => {
     mockFetch().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
       json: () => Promise.resolve({ result: '0x1234' }),
     });
 
