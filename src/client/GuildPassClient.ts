@@ -130,12 +130,16 @@ export class GuildPassClient {
       `guilds:getGuild:${guildId}`,
       `guilds:getGuildConfig:${guildId}`,
     ];
-    // Use deleteByPrefix if the adapter supports it; otherwise fall back to
-    // exact-key deletion (legacy behaviour that may miss nested entries).
-    if (this.cache.deleteByPrefix) {
-      await Promise.all(prefixes.map((p) => this.cache!.deleteByPrefix!(p)));
-    } else {
-      await Promise.all(prefixes.map((k) => this.cache!.delete(k)));
+    try {
+      // Use deleteByPrefix if the adapter supports it; otherwise fall back to
+      // exact-key deletion (legacy behaviour that may miss nested entries).
+      if (this.cache.deleteByPrefix) {
+        await Promise.all(prefixes.map((p) => this.cache!.deleteByPrefix!(p)));
+      } else {
+        await Promise.all(prefixes.map((k) => this.cache!.delete(k)));
+      }
+    } catch (error: any) {
+      this.handleCacheError('delete', error);
     }
   }
 
@@ -146,19 +150,27 @@ export class GuildPassClient {
    */
   public async invalidateWalletCache(walletAddress: string): Promise<void> {
     if (!this.cache) return;
-    // Use deleteByPrefix to remove only wallet-scoped entries instead of
-    // clearing the entire cache. Falls back to full clear for adapters
-    // that don't support prefix deletion.
-    if (this.cache.deleteByPrefix) {
-      await this.cache.deleteByPrefix(`wallet:${walletAddress}:`);
-    } else {
-      await this.cache.clear();
+    try {
+      // Use deleteByPrefix to remove only wallet-scoped entries instead of
+      // clearing the entire cache. Falls back to full clear for adapters
+      // that don't support prefix deletion.
+      if (this.cache.deleteByPrefix) {
+        await this.cache.deleteByPrefix(`wallet:${walletAddress}:`);
+      } else {
+        await this.cache.clear();
+      }
+    } catch (error: any) {
+      this.handleCacheError(this.cache.deleteByPrefix ? 'delete' : 'clear', error);
     }
   }
 
   /** Clears the entire cache. */
   public async clearCache(): Promise<void> {
-    await this.cache?.clear();
+    try {
+      await this.cache?.clear();
+    } catch (error: any) {
+      this.handleCacheError('clear', error);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -180,11 +192,47 @@ export class GuildPassClient {
   // ---------------------------------------------------------------------------
 
   private async withCache<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const cached = await this.cache!.get<T>(key);
-    if (cached !== null) return cached;
+    try {
+      const cached = await this.cache!.get<T>(key);
+      if (cached !== null) return cached;
+    } catch (error: any) {
+      this.handleCacheError('get', error, key);
+    }
+
     const result = await fn();
-    await this.cache!.set(key, result, this.cacheTtl);
+
+    try {
+      await this.cache!.set(key, result, this.cacheTtl);
+    } catch (error: any) {
+      this.handleCacheError('set', error, key);
+    }
+
     return result;
+  }
+
+  /**
+   * Safely handles cache errors by notifying hooks if present.
+   * Cache failures are isolated and never prevent the SDK from functioning.
+   */
+  private handleCacheError(
+    operation: 'get' | 'set' | 'delete' | 'clear',
+    error: Error,
+    key?: string,
+  ): void {
+    if (this.config.hooks?.onCacheError) {
+      try {
+        // Asynchronous hook call is intentionally not awaited to avoid blocking
+        // the main request flow, but we wrap it in a try-catch for safety.
+        const result = this.config.hooks.onCacheError({ operation, error, key });
+        if (result instanceof Promise) {
+          result.catch((err) => {
+            console.error('GuildPass SDK: onCacheError hook failed', err);
+          });
+        }
+      } catch (err) {
+        console.error('GuildPass SDK: onCacheError hook failed', err);
+      }
+    }
   }
 
   private buildCachedAccessService(raw: AccessService): AccessService {

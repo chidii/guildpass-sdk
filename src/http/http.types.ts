@@ -73,9 +73,20 @@ export type ErrorHookPayload = RequestHookPayload & {
   durationMs: number;
 };
 
+export type CacheErrorHookPayload = {
+  /** The cache operation that failed. */
+  operation: 'get' | 'set' | 'delete' | 'clear';
+  /** The cache key involved, if applicable. */
+  key?: string;
+  /** The error thrown by the cache adapter. */
+  error: Error;
+};
+
 // GuildPass SDK: Lifecycle hooks interface.
 export interface HttpHooks {
   onRequest?: (payload: RequestHookPayload) => void | Promise<void>;
   onResponse?: (payload: ResponseHookPayload) => void | Promise<void>;
   onError?: (payload: ErrorHookPayload) => void | Promise<void>;
+  /** Called when a cache adapter operation fails. Cache failures are non-fatal. */
+  onCacheError?: (payload: CacheErrorHookPayload) => void | Promise<void>;
 }
