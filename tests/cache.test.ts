@@ -321,4 +321,73 @@ describe('GuildPassClient – cache integration', () => {
     await client.guilds.getGuild({ guildId: 'prime-guild' });
     expect(httpSpy).not.toHaveBeenCalled();
   });
+
+  describe('Resilience - cache failures', () => {
+    const mockGuild = { id: 'g1', name: 'G1', ownerAddress: '0x1', chainId: 1 };
+
+    it('falls back to network if cache.get() fails', async () => {
+      const adapter = buildMockAdapter();
+      vi.spyOn(adapter, 'get').mockRejectedValue(new Error('Cache Get Failure'));
+
+      const onCacheError = vi.fn();
+      const client = new GuildPassClient({
+        ...BASE_CONFIG,
+        cache: adapter,
+        hooks: { onCacheError }
+      });
+
+      const httpSpy = vi.spyOn(client['http'] as any, 'get').mockResolvedValue(mockGuild);
+
+      const result = await client.guilds.getGuild({ guildId: 'g1' });
+
+      expect(result).toEqual(mockGuild);
+      expect(httpSpy).toHaveBeenCalledTimes(1);
+      expect(onCacheError).toHaveBeenCalledWith(expect.objectContaining({
+        operation: 'get',
+        key: 'guilds:getGuild:g1',
+        error: expect.any(Error)
+      }));
+    });
+
+    it('still returns response if cache.set() fails', async () => {
+      const adapter = buildMockAdapter();
+      vi.spyOn(adapter, 'set').mockRejectedValue(new Error('Cache Set Failure'));
+
+      const onCacheError = vi.fn();
+      const client = new GuildPassClient({
+        ...BASE_CONFIG,
+        cache: adapter,
+        hooks: { onCacheError }
+      });
+
+      vi.spyOn(client['http'] as any, 'get').mockResolvedValue(mockGuild);
+
+      const result = await client.guilds.getGuild({ guildId: 'g1' });
+
+      expect(result).toEqual(mockGuild);
+      expect(onCacheError).toHaveBeenCalledWith(expect.objectContaining({
+        operation: 'set',
+        key: 'guilds:getGuild:g1',
+        error: expect.any(Error)
+      }));
+    });
+
+    it('isolates failures in invalidateGuildCache', async () => {
+      const adapter = buildMockAdapter();
+      vi.spyOn(adapter, 'delete').mockRejectedValue(new Error('Cache Delete Failure'));
+
+      const onCacheError = vi.fn();
+      const client = new GuildPassClient({
+        ...BASE_CONFIG,
+        cache: adapter,
+        hooks: { onCacheError }
+      });
+
+      await expect(client.invalidateGuildCache('g1')).resolves.toBeUndefined();
+      expect(onCacheError).toHaveBeenCalledWith(expect.objectContaining({
+        operation: 'delete',
+        error: expect.any(Error)
+      }));
+    });
+  });
 });

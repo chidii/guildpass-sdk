@@ -218,6 +218,43 @@ const guild = await client.guilds.getGuild(
 );
 ```
 
+## Caching Resilience
+
+The SDK treats caching as an optimization layer. Cache failures (e.g., a Redis
+connection timeout or a malformed entry) are non-fatal and will never prevent a
+successful API request.
+
+- **Graceful Fallback**: If `cache.get()` fails, the SDK will continue with a
+  network request.
+- **Safe Persistence**: If `cache.set()` fails, the SDK will still return the
+  successful API response.
+- **Isolated Invalidation**: Failures during cache invalidation (`invalidateGuildCache`, `clearCache`) are caught and do not bubble up to the caller.
+
+### Observing Cache Failures
+
+Advanced users can observe cache failures by providing an `onCacheError` hook in the client configuration:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: '...',
+  cache: new RedisCacheAdapter(),
+  hooks: {
+    onCacheError: (payload) => {
+      console.error(`Cache ${payload.operation} failed for key: ${payload.key}`);
+      console.error(payload.error);
+    }
+  }
+});
+```
+
+The hook receives a `CacheErrorHookPayload` containing the operation name (`get`, `set`, `delete`, `clear`), the affected `key` (if any), and the original `error`.
+
+### Security Note
+
+The SDK ensures that sensitive information such as API keys and authorization
+headers are never passed to the cache layer. Cache keys only contain public
+identifiers like guild IDs, wallet addresses, and resource IDs.
+
 ## Cancellation
 
 Pass an `AbortSignal` via the `signal` option to cancel an in-flight request. The signal composes with the per-request timeout — whichever fires first wins.
