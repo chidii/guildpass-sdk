@@ -424,3 +424,421 @@ describe('ContractClient chain resolution', () => {
     expect(cfg.contractAddress).toBeUndefined();
   });
 });
+
+// GuildPass SDK: Test suite container block.
+describe('ContractClient Batch', () => {
+  const client = new GuildPassClient({
+    apiUrl: BASE_URL,
+    rpcUrl: RPC_URL,
+    contractAddress: CONTRACT,
+  });
+  const walletAddress = WALLET;
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // ---------------------------------------------------------------------------
+  // batchEthCall
+  // ---------------------------------------------------------------------------
+
+  it('should send a JSON-RPC batch request and return ordered results', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+          { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000000000000000000000000000000000000000000002' },
+        ]),
+    });
+
+    const results = await client.contracts.batchEthCall(
+      [
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+      ],
+      RPC_URL,
+    );
+
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ status: 'success', result: expect.any(String) });
+    expect(results[1]).toMatchObject({ status: 'success', result: expect.any(String) });
+
+    // Verify the batch structure
+    const requestBody = JSON.parse(mockFetch().mock.calls[0][1].body as string);
+    expect(Array.isArray(requestBody)).toBe(true);
+    expect(requestBody).toHaveLength(2);
+    expect(requestBody[0].method).toBe('eth_call');
+    expect(requestBody[0].id).toBe(1);
+    expect(requestBody[1].id).toBe(2);
+  });
+
+  it('should preserve input order in batch results', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 2, result: '0x00000000000000000000000000000000000000000000000000000000000000bb' },
+          { jsonrpc: '2.0', id: 1, result: '0x000000000000000000000000000000000000000000000000000000000000002a' },
+        ]),
+    });
+
+    const results = await client.contracts.batchEthCall(
+      [
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+      ],
+      RPC_URL,
+    );
+
+    // Input order must be preserved regardless of response order
+    expect(results[0].result).toBe('0x000000000000000000000000000000000000000000000000000000000000002a');
+    expect(results[1].result).toBe('0x00000000000000000000000000000000000000000000000000000000000000bb');
+  });
+
+  it('should report partial failures per item', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+          { jsonrpc: '2.0', id: 2, error: { code: -32000, message: 'execution reverted' } },
+          { jsonrpc: '2.0', id: 3, result: '0x0000000000000000000000000000000000000000000000000000000000000003' },
+        ]),
+    });
+
+    const results = await client.contracts.batchEthCall(
+      [
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+      ],
+      RPC_URL,
+    );
+
+    expect(results).toHaveLength(3);
+    expect(results[0].status).toBe('success');
+    expect(results[1].status).toBe('error');
+    expect(results[1].error).toBe('execution reverted');
+    expect(results[2].status).toBe('success');
+  });
+
+  it('should report missing responses as errors', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+          // id: 2 is missing from the response
+        ]),
+    });
+
+    const results = await client.contracts.batchEthCall(
+      [
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+        { to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) },
+      ],
+      RPC_URL,
+    );
+
+    expect(results[0].status).toBe('success');
+    expect(results[1].status).toBe('error');
+    expect(results[1].error).toContain('No response');
+  });
+
+  it('should reject empty calls array', async () => {
+    await expect(
+      client.contracts.batchEthCall([], RPC_URL),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_INPUT,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should reject missing rpcUrl for batchEthCall', async () => {
+    await expect(
+      client.contracts.batchEthCall([{ to: CONTRACT, data: '0x' }], ''),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_CONFIG,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should reject invalid call.to address', async () => {
+    await expect(
+      client.contracts.batchEthCall([{ to: 'not-an-address', data: '0x' }], RPC_URL),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_ADDRESS,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should throw HTTP_ERROR on non-ok batch response', async () => {
+    mockFetch().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ message: 'Internal Server Error' }),
+    });
+
+    await expect(
+      client.contracts.batchEthCall([{ to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) }], RPC_URL),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.SERVER_ERROR,
+    });
+  });
+
+  it('should reject non-array batch response', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ result: 'single' }),
+    });
+
+    await expect(
+      client.contracts.batchEthCall([{ to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) }], RPC_URL),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_RESPONSE,
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getMembershipTokenBalancesBatch
+  // ---------------------------------------------------------------------------
+
+  const WALLET_A = '0x1111111111111111111111111111111111111111';
+  const WALLET_B = '0x2222222222222222222222222222222222222222';
+  const WALLET_C = '0x3333333333333333333333333333333333333333';
+
+  it('should batch membership token balances preserving order', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x000000000000000000000000000000000000000000000000000000000000000a' },
+          { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000000000000000000000000000000000000000000000' },
+          { jsonrpc: '2.0', id: 3, result: '0x000000000000000000000000000000000000000000000000000000000000002a' },
+        ]),
+    });
+
+    const results = await client.contracts.getMembershipTokenBalancesBatch({
+      walletAddresses: [WALLET_A, WALLET_B, WALLET_C],
+    });
+
+    expect(results).toHaveLength(3);
+    expect(results[0]).toMatchObject({ status: 'success', result: '10' });
+    expect(results[1]).toMatchObject({ status: 'success', result: '0' });
+    expect(results[2]).toMatchObject({ status: 'success', result: '42' });
+  });
+
+  it('should handle partial RPC failures in balance batch', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000005' },
+          { jsonrpc: '2.0', id: 2, error: { code: -32000, message: 'execution reverted' } },
+        ]),
+    });
+
+    const results = await client.contracts.getMembershipTokenBalancesBatch({
+      walletAddresses: [WALLET_A, WALLET_B],
+    });
+
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ status: 'success', result: '5' });
+    expect(results[1]).toMatchObject({ status: 'error', error: 'execution reverted' });
+  });
+
+  it('should validate all wallet addresses before making the batch request', async () => {
+    await expect(
+      client.contracts.getMembershipTokenBalancesBatch({
+        walletAddresses: [WALLET_A, 'not-an-address'],
+      }),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_ADDRESS,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should reject empty wallet addresses array', async () => {
+    await expect(
+      client.contracts.getMembershipTokenBalancesBatch({
+        walletAddresses: [],
+      }),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_INPUT,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should use per-chain config for balance batch', async () => {
+    const chainClient = new GuildPassClient({
+      apiUrl: BASE_URL,
+      chains: {
+        8453: {
+          rpcUrl: 'https://base.rpc',
+          contractAddress: '0x2222222222222222222222222222222222222222',
+        },
+      },
+    });
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+        ]),
+    });
+
+    await chainClient.contracts.getMembershipTokenBalancesBatch({
+      walletAddresses: [WALLET_A],
+      chainId: 8453,
+    });
+
+    const requestBody = JSON.parse(mockFetch().mock.calls[0][1].body as string);
+    expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
+    expect(requestBody[0].params[0].to).toBe('0x2222222222222222222222222222222222222222');
+  });
+
+  it('should support per-call contract override in balance batch', async () => {
+    const overrideContract = '0x4444444444444444444444444444444444444444';
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+        ]),
+    });
+
+    await client.contracts.getMembershipTokenBalancesBatch({
+      walletAddresses: [WALLET_A],
+      contractAddress: overrideContract,
+    });
+
+    const requestBody = JSON.parse(mockFetch().mock.calls[0][1].body as string);
+    expect(requestBody[0].params[0].to).toBe(overrideContract);
+  });
+
+  // ---------------------------------------------------------------------------
+  // getGuildOwnersBatch
+  // ---------------------------------------------------------------------------
+
+  it('should batch guild owner lookups preserving order', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: `0x000000000000000000000000${OWNER.slice(2)}` },
+          { jsonrpc: '2.0', id: 2, result: `0x000000000000000000000000${WALLET_A.slice(2)}` },
+        ]),
+    });
+
+    const results = await client.contracts.getGuildOwnersBatch({
+      guildIds: ['guild_1', 'guild_2'],
+    });
+
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ status: 'success', result: OWNER });
+    expect(results[1]).toMatchObject({ status: 'success', result: WALLET_A });
+  });
+
+  it('should handle partial RPC failures in guild owner batch', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: `0x000000000000000000000000${OWNER.slice(2)}` },
+          { jsonrpc: '2.0', id: 2, error: { code: -32000, message: 'execution reverted' } },
+        ]),
+    });
+
+    const results = await client.contracts.getGuildOwnersBatch({
+      guildIds: ['guild_1', 'guild_2'],
+    });
+
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ status: 'success', result: OWNER });
+    expect(results[1]).toMatchObject({ status: 'error', error: 'execution reverted' });
+  });
+
+  it('should validate all guild IDs before making the batch request', async () => {
+    await expect(
+      client.contracts.getGuildOwnersBatch({
+        guildIds: ['guild_1', ''],
+      }),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_INPUT,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should reject empty guild IDs array', async () => {
+    await expect(
+      client.contracts.getGuildOwnersBatch({
+        guildIds: [],
+      }),
+    ).rejects.toMatchObject({
+      code: GuildPassErrorCode.INVALID_INPUT,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should report malformed individual results as errors', async () => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x1234' }, // too short for address
+        ]),
+    });
+
+    const results = await client.contracts.getGuildOwnersBatch({
+      guildIds: ['guild_1'],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('error');
+    expect(results[0].error).toBe('Failed to decode guild owner result');
+  });
+
+  it('should use per-chain config for guild owner batch', async () => {
+    const chainClient = new GuildPassClient({
+      apiUrl: BASE_URL,
+      chains: {
+        8453: {
+          rpcUrl: 'https://base.rpc',
+          contractAddress: '0x2222222222222222222222222222222222222222',
+        },
+      },
+    });
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: `0x000000000000000000000000${OWNER.slice(2)}` },
+        ]),
+    });
+
+    await chainClient.contracts.getGuildOwnersBatch({
+      guildIds: ['guild_1'],
+      chainId: 8453,
+    });
+
+    expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
+  });
+});

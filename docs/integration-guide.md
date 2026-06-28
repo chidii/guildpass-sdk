@@ -125,3 +125,71 @@ const client = new GuildPassClient({
   fetch: tracedFetch,
 });
 ```
+
+## 6. Batch Contract Read Calls
+
+When you need to check membership token balances or guild owners for many
+wallets or guilds at once, use the SDK's batch helpers to reduce RPC
+overhead. Each batch sends a single JSON-RPC request containing multiple
+`eth_call` sub-requests.
+
+### Batch Token Balances
+
+```typescript
+const results = await client.contracts.getMembershipTokenBalancesBatch({
+  walletAddresses: [
+    '0x1234567890123456789012345678901234567890',
+    '0xAbcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    '0x1111111111111111111111111111111111111111',
+  ],
+});
+
+results.forEach((item, index) => {
+  if (item.status === 'success') {
+    console.log(`Wallet ${index} balance: ${item.result}`);
+  } else {
+    console.error(`Wallet ${index} failed: ${item.error}`);
+  }
+});
+```
+
+### Batch Guild Owners
+
+```typescript
+const results = await client.contracts.getGuildOwnersBatch({
+  guildIds: ['guild_1', 'guild_2', '42'],
+});
+
+results.forEach((item, index) => {
+  if (item.status === 'success') {
+    console.log(`Guild ${index} owner: ${item.result}`);
+  } else {
+    console.error(`Guild ${index} failed: ${item.error}`);
+  }
+});
+```
+
+### Provider Compatibility
+
+JSON-RPC batch requests work with most modern RPC providers (Infura,
+Alchemy, QuickNode, public nodes, etc.). Some providers may impose limits
+on the number of calls per batch — if you encounter errors with large
+batches, split your input into smaller chunks (e.g., 50–100 items per
+batch).
+
+The SDK does **not** batch mutating operations. Only read-only `eth_call`
+requests are sent through these helpers. For write operations, use the
+individual contract methods or the REST API.
+
+### Partial Failure Handling
+
+Batch calls never fail entirely because of a single problematic item.
+Each sub-request is individually resolved in the response:
+
+- **Success**: `{ status: 'success', result: '<decoded-value>' }`
+- **RPC error**: `{ status: 'error', error: '<rpc-error-message>' }`
+- **Missing response**: `{ status: 'error', error: 'No response for batch item N' }`
+- **Malformed result**: `{ status: 'error', error: 'Failed to decode ...' }`
+
+This makes batch calls suitable for production use where you want to
+gracefully handle individual failures without losing all results.
