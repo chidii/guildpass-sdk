@@ -61,6 +61,7 @@ export function validateConfig(config: GuildPassClientConfig): void {
   if (!config.apiUrl) {
     throw new GuildPassError('apiUrl is required', GuildPassErrorCode.INVALID_CONFIG);
   }
+
   try {
     const url = new URL(config.apiUrl);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -72,6 +73,7 @@ export function validateConfig(config: GuildPassClientConfig): void {
       GuildPassErrorCode.INVALID_CONFIG,
     );
   }
+
   if (
     config.timeoutMs !== undefined &&
     (typeof config.timeoutMs !== 'number' || config.timeoutMs <= 0)
@@ -81,6 +83,51 @@ export function validateConfig(config: GuildPassClientConfig): void {
       GuildPassErrorCode.INVALID_CONFIG,
     );
   }
+
+  // INSERT RETRY VALIDATION 
+  if (config.retry) {
+    const r = config.retry;
+
+    if (typeof r.maxRetries !== 'number' || r.maxRetries < 0 || !Number.isFinite(r.maxRetries)) {
+      throw new GuildPassError(
+        'retry.maxRetries must be a non-negative finite number',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (typeof r.baseDelayMs !== 'number' || r.baseDelayMs < 0 || !Number.isFinite(r.baseDelayMs)) {
+      throw new GuildPassError(
+        'retry.baseDelayMs must be a non-negative finite number',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (typeof r.maxDelayMs !== 'number' || r.maxDelayMs < 0 || !Number.isFinite(r.maxDelayMs)) {
+      throw new GuildPassError(
+        'retry.maxDelayMs must be a non-negative finite number',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (r.baseDelayMs !== undefined && r.maxDelayMs !== undefined && r.maxDelayMs < r.baseDelayMs) {
+      throw new GuildPassError(
+        'retry.maxDelayMs cannot be less than baseDelayMs',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (
+      !Array.isArray(r.retryableStatuses) ||
+      r.retryableStatuses.some((s) => typeof s !== 'number' || !Number.isFinite(s))
+    ) {
+      throw new GuildPassError(
+        'retryableStatuses must be an array of valid HTTP status numbers',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+  }
+  // END RETRY VALIDATION 
+
   const transport = config.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') {
     throw new GuildPassError(
@@ -89,7 +136,6 @@ export function validateConfig(config: GuildPassClientConfig): void {
     );
   }
 }
-
 /**
  * Resolves the chain configuration for a given chain ID.
  * Per-chain entries in `config.chains` take precedence over the top-level

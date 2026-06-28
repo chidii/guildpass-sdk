@@ -32,14 +32,64 @@ export function redactHeaders(headers: Headers | Record<string, string>): Record
   return redacted;
 }
 
-function resolveRetry(global: RetryConfig | undefined, local: RetryConfig | undefined): Required<RetryConfig> {
+function resolveRetry(
+  global: RetryConfig | undefined,
+  local: RetryConfig | undefined,
+): Required<RetryConfig> {
   const merged = { ...global, ...local };
+
+  const maxRetries = merged.maxRetries ?? 0;
+  const baseDelayMs = merged.baseDelayMs ?? 200;
+  const maxDelayMs = merged.maxDelayMs ?? 5000;
+  const retryableStatuses = merged.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES;
+  const allowMutatingRetry = merged.allowMutatingRetry ?? false;
+
+  // FAIL FAST VALIDATION 
+  if (!Number.isFinite(maxRetries) || maxRetries < 0) {
+    throw new GuildPassError(
+      'Invalid retry config: maxRetries must be a non-negative finite number',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (!Number.isFinite(baseDelayMs) || baseDelayMs < 0) {
+    throw new GuildPassError(
+      'Invalid retry config: baseDelayMs must be a non-negative finite number',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (!Number.isFinite(maxDelayMs) || maxDelayMs < 0) {
+    throw new GuildPassError(
+      'Invalid retry config: maxDelayMs must be a non-negative finite number',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (maxDelayMs < baseDelayMs) {
+    throw new GuildPassError(
+      'Invalid retry config: maxDelayMs cannot be less than baseDelayMs',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (
+    !Array.isArray(retryableStatuses) ||
+    retryableStatuses.length === 0 ||
+    retryableStatuses.some((s) => typeof s !== 'number')
+  ) {
+    throw new GuildPassError(
+      'Invalid retry config: retryableStatuses must be a non-empty array of status codes',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
   return {
-    maxRetries: merged.maxRetries ?? 0,
-    baseDelayMs: merged.baseDelayMs ?? 200,
-    maxDelayMs: merged.maxDelayMs ?? 5000,
-    retryableStatuses: merged.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES,
-    allowMutatingRetry: merged.allowMutatingRetry ?? false,
+    maxRetries,
+    baseDelayMs,
+    maxDelayMs,
+    retryableStatuses,
+    allowMutatingRetry,
   };
 }
 
