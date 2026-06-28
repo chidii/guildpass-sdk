@@ -18,9 +18,9 @@ import {
 import { validateRoleRequirementStub } from './contractHelpers';
 import { GuildPassClientConfig, resolveChainConfig } from '../config/sdkConfig';
 
-const GET_GUILD_OWNER_SELECTOR = '0xab4511dc';
-const BALANCE_OF_SELECTOR = '0x70a08231';
-const HEX_32_BYTES_LENGTH = 64;
+export const GET_GUILD_OWNER_SELECTOR = '0xab4511dc';
+export const BALANCE_OF_SELECTOR = '0x70a08231';
+export const HEX_32_BYTES_LENGTH = 64;
 
 type JsonRpcSuccess = {
   result?: unknown;
@@ -33,7 +33,7 @@ type JsonRpcError = {
   };
 };
 
-const encodeGuildId = (guildId: string): string => {
+export const encodeGuildId = (guildId: string): string => {
   const trimmed = guildId.trim();
 
   if (/^0x[a-fA-F0-9]{64}$/.test(trimmed)) {
@@ -65,7 +65,7 @@ const encodeGuildId = (guildId: string): string => {
     .padEnd(HEX_32_BYTES_LENGTH, '0');
 };
 
-const decodeAddressResult = (result: unknown): string => {
+export const decodeAddressResult = (result: unknown): string => {
   if (typeof result !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(result)) {
     throw new GuildPassError(
       'Invalid getGuildOwner RPC response',
@@ -78,11 +78,11 @@ const decodeAddressResult = (result: unknown): string => {
   return address;
 };
 
-const encodeAddressArgument = (address: string): string => {
+export const encodeAddressArgument = (address: string): string => {
   return address.slice(2).toLowerCase().padStart(64, '0');
 };
 
-const decodeUint256Result = (result: unknown): string => {
+export const decodeUint256Result = (result: unknown): string => {
   if (typeof result !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(result)) {
     throw new GuildPassError(
       'Invalid getMembershipTokenBalance RPC response',

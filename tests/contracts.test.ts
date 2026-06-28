@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GuildPassClient } from '../src/client/GuildPassClient';
 // GuildPass SDK: Pull in package or module bindings.
 import { GuildPassErrorCode } from '../src/errors/errorCodes';
+import { GuildPassError } from '../src/errors/GuildPassError';
+import {
+  BALANCE_OF_SELECTOR,
+  GET_GUILD_OWNER_SELECTOR,
+  encodeAddressArgument,
+  encodeGuildId,
+  decodeAddressResult,
+  decodeUint256Result,
+} from '../src/contracts/contractClient';
+import contractEncodingFixtures from './fixtures/contract-encoding.json';
 
 const WALLET = '0x1234567890123456789012345678901234567890';
 const CONTRACT = '0x0000000000000000000000000000000000000000';
@@ -841,4 +851,128 @@ describe('ContractClient Batch', () => {
 
     expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
   });
+});
+
+// ---------------------------------------------------------------------------
+// Contract selector, encoding, and decoding unit tests
+// ---------------------------------------------------------------------------
+describe('Contract Selectors', () => {
+  it('balanceOf(address) selector matches the hard-coded constant', () => {
+    // keccak256('balanceOf(address)') first 4 bytes = 0x70a08231
+    expect(BALANCE_OF_SELECTOR).toBe(contractEncodingFixtures.selectors.balanceOf.selector);
+    expect(BALANCE_OF_SELECTOR).toBe('0x70a08231');
+  });
+
+  it('getGuildOwner(bytes32) selector matches the hard-coded constant', () => {
+    // keccak256('getGuildOwner(bytes32)') first 4 bytes = 0xab4511dc
+    expect(GET_GUILD_OWNER_SELECTOR).toBe(contractEncodingFixtures.selectors.getGuildOwner.selector);
+    expect(GET_GUILD_OWNER_SELECTOR).toBe('0xab4511dc');
+  });
+});
+
+describe('Address Argument Encoding', () => {
+  it.each(contractEncodingFixtures.encodedAddressArguments)(
+    'pads $address to 32 bytes: $encoded',
+    ({ address, encoded }) => {
+      expect(encodeAddressArgument(address)).toBe(encoded);
+    },
+  );
+
+  it('produces consistent full calldata for balanceOf calls', () => {
+    for (const fixture of contractEncodingFixtures.fullCalldata) {
+      if (fixture.method !== 'balanceOf') continue;
+      const encoded = `${BALANCE_OF_SELECTOR}${encodeAddressArgument(fixture.params.walletAddress)}`;
+      expect(encoded).toBe(fixture.calldata);
+    }
+  });
+});
+
+describe('Guild ID Encoding', () => {
+  it.each(contractEncodingFixtures.encodedGuildIds)(
+    'encodes guild ID "$guildId" as $encoded',
+    ({ guildId, encoded }) => {
+      expect(encodeGuildId(guildId)).toBe(encoded);
+    },
+  );
+
+  it('rejects oversized numeric guild IDs', () => {
+    const largeId = '0x' + 'f'.repeat(65); // 65 hex chars > 32 bytes
+    expect(() => encodeGuildId(largeId)).toThrow(
+      expect.objectContaining({ code: GuildPassErrorCode.INVALID_INPUT }),
+    );
+  });
+
+  it('rejects guild IDs exceeding 32 UTF-8 bytes', () => {
+    const longString = 'x'.repeat(33);
+    expect(() => encodeGuildId(longString)).toThrow(
+      expect.objectContaining({ code: GuildPassErrorCode.INVALID_INPUT }),
+    );
+  });
+
+  it('produces consistent full calldata for getGuildOwner calls', () => {
+    for (const fixture of contractEncodingFixtures.fullCalldata) {
+      if (fixture.method !== 'getGuildOwner') continue;
+      const encoded = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(fixture.params.guildId)}`;
+      expect(encoded).toBe(fixture.calldata);
+    }
+  });
+});
+
+describe('Address Result Decoding', () => {
+  it.each(
+    contractEncodingFixtures.validDecodedResponses
+      .filter((r) => r.type === 'address')
+      .map((r) => [r.description, r.rawHex, r.expected] as const),
+  )('decodes valid address response: %s', (_, rawHex, expected) => {
+    expect(decodeAddressResult(rawHex)).toBe(expected);
+  });
+
+  it.each(
+    contractEncodingFixtures.malformedResponses.map((r) => [r.description, r.value] as const),
+  )('throws INVALID_RESPONSE for malformed input: %s', (_, value) => {
+    expect(() => decodeAddressResult(value)).toThrow(
+      expect.objectContaining({ code: GuildPassErrorCode.INVALID_RESPONSE }),
+    );
+  });
+
+  it('throws INVALID_RESPONSE when decoded result has non-hex characters', () => {
+    expect(() => decodeAddressResult('0x' + 'z'.repeat(64))).toThrow(
+      expect.objectContaining({ code: GuildPassErrorCode.INVALID_RESPONSE }),
+    );
+  });
+});
+
+describe('Uint256 Result Decoding', () => {
+  it.each(
+    contractEncodingFixtures.validDecodedResponses
+      .filter((r) => r.type === 'uint256')
+      .map((r) => [r.description, r.rawHex, r.expected] as const),
+  )('decodes valid uint256 response: %s', (_, rawHex, expected) => {
+    expect(decodeUint256Result(rawHex)).toBe(expected);
+  });
+
+  it.each(
+    contractEncodingFixtures.malformedResponses.map((r) => [r.description, r.value] as const),
+  )('throws INVALID_RESPONSE for malformed input: %s', (_, value) => {
+    expect(() => decodeUint256Result(value)).toThrow(
+      expect.objectContaining({ code: GuildPassErrorCode.INVALID_RESPONSE }),
+    );
+  });
+});
+
+describe('JSON-RPC Error Mapping', () => {
+  it.each(contractEncodingFixtures.rpcErrorPayloads)(
+    'maps RPC error "$expectedMessage" to GuildPassError with code $expectedCode',
+    ({ payload, expectedCode, expectedMessage }) => {
+      const error = new GuildPassError(
+        payload.message,
+        GuildPassErrorCode.HTTP_ERROR,
+        undefined,
+        payload,
+      );
+      expect(error).toBeInstanceOf(GuildPassError);
+      expect(error.code).toBe(expectedCode);
+      expect(error.message).toBe(expectedMessage);
+    },
+  );
 });
