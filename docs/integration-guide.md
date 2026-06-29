@@ -58,7 +58,44 @@ const config = await client.guilds.getGuildConfig({ guildId: 'my-guild' });
 // Use config.theme, config.socialLinks etc to render the UI
 ```
 
-## 4. Custom Transport (Proxies, Logging, etc.)
+## 4. Per-Request Timeout
+
+Override the global timeout on a per-call basis when certain endpoints need tighter or looser bounds:
+
+```typescript
+import { GuildPassClient } from '@guildpass/sdk';
+
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  timeoutMs: 10_000, // 10s global default
+});
+
+// Use a shorter timeout for a fast health-check endpoint
+const status = await client.access.checkAccess(
+  { walletAddress: wallet, guildId: 'g', resourceId: 'r' },
+  { timeoutMs: 2_000 }, // 2s for this call only
+);
+
+// Use a longer timeout for a complex batch operation
+const results = await client.access.checkAccessBatch(items, {
+  timeoutMs: 30_000, // 30s for the batch
+  concurrency: 10,
+});
+```
+
+The per-request `timeoutMs` takes precedence over the client-level `timeoutMs`. If omitted, the global value is used. An `AbortSignal` can also be passed for cancellation:
+
+```typescript
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 5_000);
+
+const result = await client.guilds.getGuild(
+  { guildId: 'my-guild' },
+  { signal: controller.signal },
+);
+```
+
+## 5. Custom Transport (Proxies, Logging, etc.)
 
 The SDK allows you to provide a custom `fetch` implementation. This is useful for:
 - Supporting legacy Node.js versions (using `node-fetch` or `undici`)
@@ -73,7 +110,7 @@ import myCustomFetch from './my-fetch-wrapper';
 const client = new GuildPassClient({
   apiUrl: 'https://api.guildpass.xyz',
   fetch: myCustomFetch, // Injected transport
-## 4. Batch Access Checking
+## 6. Batch Access Checking
 
 If you need to verify access for multiple resources or multiple users at once, use the batch access helper to manage concurrency and gracefully handle partial failures.
 
