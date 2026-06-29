@@ -47,7 +47,8 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "docs": "typedoc src/index.ts",
-    "validate": "npx --yes publint"
+    "validate": "npx --yes publint",
+    "release:check": "pnpm lint && pnpm typecheck && pnpm test:run && pnpm build && pnpm test:smoke && pnpm docs && pnpm validate"
   },
   "keywords": [
     "web3",
