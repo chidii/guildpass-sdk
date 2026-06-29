@@ -15,6 +15,20 @@ export type TokenBalanceParams = {
   // GuildPass SDK: End of logic containment structure block.
 };
 
+/**
+ * A token balance with the metadata needed to display it: the raw on-chain
+ * integer (`raw`, base units as a decimal string), the token's `decimals`, and
+ * the human-readable `formatted` amount.
+ */
+export type FormattedTokenBalance = {
+  /** Raw balance in base units, as an exact decimal integer string. */
+  raw: string;
+  /** Number of decimals the token uses (from its `decimals()` view). */
+  decimals: number;
+  /** Human-readable balance, e.g. "1.5" for raw "1500000" with 6 decimals. */
+  formatted: string;
+};
+
 export type GuildOwnerParams = {
   guildId: string;
   chainId?: number;

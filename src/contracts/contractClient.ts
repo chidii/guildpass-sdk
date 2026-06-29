@@ -8,6 +8,7 @@ import { validateAddress, validateGuildId } from '../utils/validation';
 import {
   BatchEthCallItem,
   BatchItemResult,
+  FormattedTokenBalance,
   GuildOwnerParams,
   GuildOwnersBatchParams,
   RoleRequirementParams,
@@ -156,6 +157,84 @@ export class ContractClient {
     const result = await this.performEthCall(contractAddress, data, chainConfig.rpcUrl, options);
     return decodeUint256Result(result);
     // GuildPass SDK: End of logic containment structure block.
+  }
+
+  /**
+   * Reads the ERC-20 `decimals()` of the membership/token contract. Needed to
+   * turn the raw balance from {@link getMembershipTokenBalance} into a
+   * human-readable amount.
+   */
+  public async getTokenDecimals(
+    params: TokenBalanceParams,
+    options?: RequestOptions,
+  ): Promise<number> {
+    const chainConfig = this.getChainConfig(params.chainId);
+    const contractAddress = params.contractAddress ?? chainConfig.contractAddress;
+
+    if (!chainConfig.rpcUrl) {
+      throw new GuildPassError(
+        'rpcUrl is required for contract calls',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+    if (!contractAddress) {
+      throw new GuildPassError(
+        'contractAddress is required for token decimals lookup',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+    validateAddress(contractAddress);
+
+    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
+      chainConfig.rpcUrl,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [{ to: contractAddress, data: DECIMALS_SELECTOR }, 'latest'],
+      },
+      {
+        ...options,
+        retry: {
+          allowMutatingRetry: true,
+          ...options?.retry,
+        },
+      },
+    );
+
+    if (payload?.error) {
+      throw new GuildPassError(
+        payload.error.message ?? 'RPC provider returned an error',
+        GuildPassErrorCode.HTTP_ERROR,
+        undefined,
+        payload.error,
+      );
+    }
+
+    const decimals = Number(decodeUint256Result(payload?.result));
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+      throw new GuildPassError(
+        'Token contract returned an invalid decimals value',
+        GuildPassErrorCode.INVALID_RESPONSE,
+      );
+    }
+    return decimals;
+  }
+
+  /**
+   * Convenience: fetch the membership token balance together with the token's
+   * `decimals` and a human-readable `formatted` string. Useful for displaying a
+   * balance directly in a UI without manual decimal handling.
+   */
+  public async getMembershipTokenBalanceFormatted(
+    params: TokenBalanceParams,
+    options?: RequestOptions,
+  ): Promise<FormattedTokenBalance> {
+    const [raw, decimals] = await Promise.all([
+      this.getMembershipTokenBalance(params, options),
+      this.getTokenDecimals(params, options),
+    ]);
+    return { raw, decimals, formatted: formatUnits(raw, decimals) };
   }
 
   /**
