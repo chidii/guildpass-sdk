@@ -55,6 +55,24 @@ export type GuildPassClientConfig = {
    * a per-call TTL is not specified. Defaults to `0` (no expiry).
    */
   cacheTtl?: number;
+  /**
+   * Whether to send client metadata headers (`X-GuildPass-SDK-Version`,
+   * `X-GuildPass-Client`) on GuildPass API-relative requests.
+   *
+   * Defaults to `true`. Set to `false` to disable all metadata headers.
+   * Metadata headers never include API keys, wallet secrets, or tokens.
+   */
+  sendClientMetadata?: boolean;
+  /**
+   * Optional client or integration name (e.g. `"my-dapp"`, `"discord-bot"`).
+   * Appears in the `X-GuildPass-Client` header alongside the SDK version.
+   */
+  clientName?: string;
+  /**
+   * Optional client version string sent as part of `X-GuildPass-Client`.
+   * When omitted, only the client name is sent (if provided).
+   */
+  clientVersion?: string;
   // GuildPass SDK: End of logic containment structure block.
 };
 
@@ -108,9 +126,41 @@ export function validateConfig(config: GuildPassClientConfig): void {
       }
     }
   }
-  // END CACHE VALIDATION 
+  // END CACHE VALIDATION
 
-  // INSERT RETRY VALIDATION 
+  // INSERT METADATA VALIDATION
+  if (
+    config.sendClientMetadata !== undefined &&
+    typeof config.sendClientMetadata !== 'boolean'
+  ) {
+    throw new GuildPassError(
+      'sendClientMetadata must be a boolean',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (
+    config.clientName !== undefined &&
+    typeof config.clientName !== 'string'
+  ) {
+    throw new GuildPassError(
+      'clientName must be a string',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (
+    config.clientVersion !== undefined &&
+    typeof config.clientVersion !== 'string'
+  ) {
+    throw new GuildPassError(
+      'clientVersion must be a string',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+  // END METADATA VALIDATION
+
+  // INSERT RETRY VALIDATION
   if (config.retry) {
     const r = config.retry;
 

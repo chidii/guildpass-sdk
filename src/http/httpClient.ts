@@ -4,6 +4,7 @@ import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
 // GuildPass SDK: Pull in package or module bindings.
 import {
+  ClientMetadata,
   FetchLike,
   HttpClientConfig,
   HttpHooks,
@@ -218,6 +219,7 @@ export class HttpClient {
   // GuildPass SDK: Class member structure property or constructor.
   private readonly hooks?: HttpHooks;
   private readonly fetchTransport?: FetchLike;
+  private readonly metadata?: ClientMetadata;
 
   // GuildPass SDK: Class member structure property or constructor.
   constructor(
@@ -236,6 +238,7 @@ export class HttpClient {
         this.globalRetry = configOrHooks.retry;
         this.hooks = configOrHooks.hooks;
         this.fetchTransport = configOrHooks.fetch;
+        this.metadata = configOrHooks.metadata;
       } else if (isRetryConfig(configOrHooks)) {
         this.globalRetry = configOrHooks;
       } else if (isHooksConfig(configOrHooks)) {
@@ -285,6 +288,26 @@ export class HttpClient {
       ...(this.apiKey && !isAbsolute ? { 'X-API-Key': this.apiKey } : {}),
       ...headers,
     };
+
+    // Attach client metadata headers only for GuildPass API-relative requests.
+    // Absolute external URLs never receive metadata headers.
+    if (!isAbsolute && this.metadata?.sendClientMetadata !== false) {
+      const sdkVersion = this.metadata?.sdkVersion;
+      if (sdkVersion && sdkVersion.length > 0) {
+        requestHeaders['X-GuildPass-SDK-Version'] = sdkVersion;
+      }
+
+      const clientParts: string[] = [];
+      if (this.metadata?.clientName && this.metadata.clientName.length > 0) {
+        clientParts.push(this.metadata.clientName);
+      }
+      if (this.metadata?.clientVersion && this.metadata.clientVersion.length > 0) {
+        clientParts.push(this.metadata.clientVersion);
+      }
+      if (clientParts.length > 0) {
+        requestHeaders['X-GuildPass-Client'] = clientParts.join('/');
+      }
+    }
 
     const retryConfig = resolveRetry(this.globalRetry, retry);
     const canRetry =

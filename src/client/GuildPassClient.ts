@@ -12,6 +12,7 @@ import { GuildsService } from '../guilds/guilds.service';
 import { HttpClient } from '../http/httpClient';
 // GuildPass SDK: Pull in package or module bindings.
 import { MembershipService } from '../membership/membership.service';
+import { SDK_VERSION } from '../config/version';
 // GuildPass SDK: Import external module dependencies.
 import { RolesService } from '../roles/roles.service';
 import { CacheAdapter } from '../cache/cache.types';
@@ -92,6 +93,12 @@ export class GuildPassClient {
         retry: this.config.retry,
         hooks: this.config.hooks,
         fetch: this.config.fetch,
+        metadata: {
+          sdkVersion: SDK_VERSION,
+          clientName: this.config.clientName,
+          clientVersion: this.config.clientVersion,
+          sendClientMetadata: this.config.sendClientMetadata,
+        },
       },
     );
 
