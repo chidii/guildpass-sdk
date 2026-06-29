@@ -790,7 +790,7 @@ describe('ContractClient Batch', () => {
     });
 
     const requestBody = JSON.parse(mockFetch().mock.calls[0][1].body as string);
-    expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/base\.rpc\/?$/), expect.any(Object));
     expect(requestBody[0].params[0].to).toBe('0x2222222222222222222222222222222222222222');
   });
 
@@ -923,7 +923,107 @@ describe('ContractClient Batch', () => {
       chainId: 8453,
     });
 
-    expect(fetch).toHaveBeenCalledWith('https://base.rpc', expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/base\.rpc\/?$/), expect.any(Object));
+  });
+
+  it('should use custom fetch transport in batchEthCall', async () => {
+    const customFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: () =>
+        Promise.resolve([
+          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+        ]),
+    });
+
+    const customClient = new GuildPassClient({
+      apiUrl: BASE_URL,
+      rpcUrl: RPC_URL,
+      contractAddress: CONTRACT,
+      fetch: customFetch,
+    });
+
+    const results = await customClient.contracts.batchEthCall(
+      [{ to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) }],
+      RPC_URL,
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('success');
+    expect(customFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch()).not.toHaveBeenCalled();
+  });
+
+  it('should support configurable timeout behaviour in batch calls', async () => {
+    mockFetch().mockImplementation(
+      (_, init) =>
+        new Promise((resolve, reject) => {
+          if (init?.signal) {
+            init.signal.addEventListener('abort', () => {
+              const error = new Error('Aborted');
+              error.name = 'AbortError';
+              reject(error);
+            });
+          }
+        }),
+    );
+
+    const promise = client.contracts.batchEthCall(
+      [{ to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) }],
+      RPC_URL,
+      { timeoutMs: 100 },
+    );
+
+    await expect(promise).rejects.toMatchObject({
+      code: GuildPassErrorCode.TIMEOUT,
+      message: expect.stringContaining('timed out after 100ms'),
+    });
+  });
+
+  it('should support external abort signals in batch calls', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const promise = client.contracts.batchEthCall(
+      [{ to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) }],
+      RPC_URL,
+      { signal: controller.signal },
+    );
+
+    await expect(promise).rejects.toMatchObject({
+      code: GuildPassErrorCode.REQUEST_CANCELLED,
+      message: 'Request cancelled by caller',
+    });
+  });
+
+  it('should retry transient RPC failures in batch calls when configured', async () => {
+    mockFetch()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        headers: new Headers(),
+        json: () => Promise.resolve({ error: { message: 'Bad Gateway' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: () =>
+          Promise.resolve([
+            { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+          ]),
+      });
+
+    const results = await client.contracts.batchEthCall(
+      [{ to: CONTRACT, data: '0x70a08231' + '0'.repeat(64) }],
+      RPC_URL,
+      { retry: { maxRetries: 1, baseDelayMs: 10 } },
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('success');
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -955,7 +1055,7 @@ describe('Address Argument Encoding', () => {
   it('produces consistent full calldata for balanceOf calls', () => {
     for (const fixture of contractEncodingFixtures.fullCalldata) {
       if (fixture.method !== 'balanceOf') continue;
-      const encoded = `${BALANCE_OF_SELECTOR}${encodeAddressArgument(fixture.params.walletAddress)}`;
+      const encoded = `${BALANCE_OF_SELECTOR}${encodeAddressArgument(fixture.params.walletAddress!)}`;
       expect(encoded).toBe(fixture.calldata);
     }
   });
@@ -986,7 +1086,7 @@ describe('Guild ID Encoding', () => {
   it('produces consistent full calldata for getGuildOwner calls', () => {
     for (const fixture of contractEncodingFixtures.fullCalldata) {
       if (fixture.method !== 'getGuildOwner') continue;
-      const encoded = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(fixture.params.guildId)}`;
+      const encoded = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(fixture.params.guildId!)}`;
       expect(encoded).toBe(fixture.calldata);
     }
   });
