@@ -106,7 +106,7 @@ export class GuildPassClient {
     this.membership = this.cache ? this.buildCachedMembershipService(rawMembership) : rawMembership;
     this.roles = this.cache ? this.buildCachedRolesService(rawRoles) : rawRoles;
     this.guilds = this.cache ? this.buildCachedGuildsService(rawGuilds) : rawGuilds;
-    this.contracts = new ContractClient(this.config);
+    this.contracts = new ContractClient(this.config, this.http);
     // GuildPass SDK: End of logic containment structure block.
   }
 
@@ -200,25 +200,17 @@ export class GuildPassClient {
       this.handleCacheError('get', error, key);
     }
 
-    const result = await fn();
-
-    try {
-      await this.cache!.set(key, result, this.cacheTtl);
-    } catch (error: any) {
-      this.handleCacheError('set', error, key);
-    }
-
-    return result;
-    const cached = await this.cache!.get<T>(key);
-    if (cached !== null) return cached;
-
     const inFlight = this.inFlightRequests.get(key);
     if (inFlight) return inFlight;
 
     const promise = (async () => {
       try {
         const result = await fn();
-        await this.cache!.set(key, result, this.cacheTtl);
+        try {
+          await this.cache!.set(key, result, this.cacheTtl);
+        } catch (error: any) {
+          this.handleCacheError('set', error, key);
+        }
         return result;
       } finally {
         this.inFlightRequests.delete(key);
