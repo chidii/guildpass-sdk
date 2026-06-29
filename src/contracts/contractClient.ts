@@ -15,14 +15,29 @@ import {
   TokenBalancesBatchParams,
 } from './contract.types';
 // GuildPass SDK: Pull in package or module bindings.
-import { validateRoleRequirementStub } from './contractHelpers';
+import {
+  BALANCE_OF_SELECTOR,
+  GET_GUILD_OWNER_SELECTOR,
+  HEX_32_BYTES_LENGTH,
+  decodeAddressResult,
+  decodeUint256Result,
+  encodeAddressArgument,
+  encodeGuildId,
+  validateAccessRequirement,
+} from './contractHelpers';
 import { GuildPassClientConfig, resolveChainConfig } from '../config/sdkConfig';
 import { HttpClient } from '../http/httpClient';
 import { RequestOptions } from '../types/common';
 
-export const GET_GUILD_OWNER_SELECTOR = '0xab4511dc';
-export const BALANCE_OF_SELECTOR = '0x70a08231';
-export const HEX_32_BYTES_LENGTH = 64;
+export {
+  BALANCE_OF_SELECTOR,
+  GET_GUILD_OWNER_SELECTOR,
+  HEX_32_BYTES_LENGTH,
+  decodeAddressResult,
+  decodeUint256Result,
+  encodeAddressArgument,
+  encodeGuildId,
+};
 
 type JsonRpcSuccess = {
   result?: unknown;
@@ -33,66 +48,6 @@ type JsonRpcError = {
     code?: number;
     message?: string;
   };
-};
-
-export const encodeGuildId = (guildId: string): string => {
-  const trimmed = guildId.trim();
-
-  if (/^0x[a-fA-F0-9]{64}$/.test(trimmed)) {
-    return trimmed.slice(2).toLowerCase();
-  }
-
-  if (/^\d+$/.test(trimmed)) {
-    const encoded = BigInt(trimmed).toString(16);
-    if (encoded.length > HEX_32_BYTES_LENGTH) {
-      throw new GuildPassError(
-        'guildId is too large for bytes32 encoding',
-        GuildPassErrorCode.INVALID_INPUT,
-      );
-    }
-    return encoded.padStart(HEX_32_BYTES_LENGTH, '0');
-  }
-
-  const bytes = new TextEncoder().encode(trimmed);
-  if (bytes.length > 32) {
-    throw new GuildPassError(
-      'guildId must fit within 32 UTF-8 bytes',
-      GuildPassErrorCode.INVALID_INPUT,
-    );
-  }
-
-  return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-    .padEnd(HEX_32_BYTES_LENGTH, '0');
-};
-
-export const decodeAddressResult = (result: unknown): string => {
-  if (typeof result !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(result)) {
-    throw new GuildPassError(
-      'Invalid getGuildOwner RPC response',
-      GuildPassErrorCode.INVALID_RESPONSE,
-    );
-  }
-
-  const address = `0x${result.slice(-40)}`;
-  validateAddress(address);
-  return address;
-};
-
-export const encodeAddressArgument = (address: string): string => {
-  return address.slice(2).toLowerCase().padStart(64, '0');
-};
-
-export const decodeUint256Result = (result: unknown): string => {
-  if (typeof result !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(result)) {
-    throw new GuildPassError(
-      'Invalid getMembershipTokenBalance RPC response',
-      GuildPassErrorCode.INVALID_RESPONSE,
-    );
-  }
-
-  return BigInt(result).toString(10);
 };
 
 // GuildPass SDK: Exported function execution unit.
@@ -127,6 +82,46 @@ export class ContractClient {
   }
 
   /**
+   * Sends a single read-only `eth_call` and returns its raw (undecoded)
+   * result. Shared by all single-call contract reads so the JSON-RPC
+   * envelope and error handling live in exactly one place.
+   */
+  private async performEthCall(
+    to: string,
+    data: string,
+    rpcUrl: string,
+    options?: RequestOptions,
+  ): Promise<unknown> {
+    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
+      rpcUrl,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [{ to, data }, 'latest'],
+      },
+      {
+        ...options,
+        retry: {
+          allowMutatingRetry: true,
+          ...options?.retry,
+        },
+      },
+    );
+
+    if (payload?.error) {
+      throw new GuildPassError(
+        payload.error.message ?? 'RPC provider returned an error',
+        GuildPassErrorCode.HTTP_ERROR,
+        undefined,
+        payload.error,
+      );
+    }
+
+    return payload?.result;
+  }
+
+  /**
    * Fetches the membership token balance for a wallet.
    */
   // GuildPass SDK: Class member structure property or constructor.
@@ -157,39 +152,9 @@ export class ContractClient {
 
     validateAddress(contractAddress);
 
-    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
-      chainConfig.rpcUrl,
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_call',
-        params: [
-          {
-            to: contractAddress,
-            data: `${BALANCE_OF_SELECTOR}${encodeAddressArgument(walletAddress)}`,
-          },
-          'latest',
-        ],
-      },
-      {
-        ...options,
-        retry: {
-          allowMutatingRetry: true,
-          ...options?.retry,
-        },
-      },
-    );
-
-    if (payload?.error) {
-      throw new GuildPassError(
-        payload.error.message ?? 'RPC provider returned an error',
-        GuildPassErrorCode.HTTP_ERROR,
-        undefined,
-        payload.error,
-      );
-    }
-
-    return decodeUint256Result(payload?.result);
+    const data = `${BALANCE_OF_SELECTOR}${encodeAddressArgument(walletAddress)}`;
+    const result = await this.performEthCall(contractAddress, data, chainConfig.rpcUrl, options);
+    return decodeUint256Result(result);
     // GuildPass SDK: End of logic containment structure block.
   }
 
@@ -221,53 +186,34 @@ export class ContractClient {
     validateAddress(contractAddress);
     const data = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(guildId)}`;
 
-    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
-      rpcUrl,
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_call',
-        params: [
-          {
-            to: contractAddress,
-            data,
-          },
-          'latest',
-        ],
-      },
-      {
-        ...options,
-        retry: {
-          allowMutatingRetry: true,
-          ...options?.retry,
-        },
-      },
-    );
-
-    if (payload?.error) {
-      throw new GuildPassError(
-        payload.error.message ?? 'RPC provider returned an error',
-        GuildPassErrorCode.HTTP_ERROR,
-        undefined,
-        payload.error,
-      );
-    }
-
-    return decodeAddressResult(payload?.result);
+    const result = await this.performEthCall(contractAddress, data, rpcUrl, options);
+    return decodeAddressResult(result);
     // GuildPass SDK: End of logic containment structure block.
   }
 
   /**
-   * Validates a role requirement for a wallet address.
-   * Stub for future on-chain support.
+   * Validates whether a wallet satisfies an access requirement (TOKEN, NFT,
+   * or on-chain ROLE checks resolve via a single `eth_call`; WHITELIST and
+   * unrecognised requirement types fail fast with a descriptive error).
    */
-  // GuildPass SDK: Class member structure property or constructor.
-  public async validateRoleRequirement(params: RoleRequirementParams): Promise<boolean> {
-    // GuildPass SDK: Local block-scoped constant reference.
-    const { walletAddress, requirement } = params;
-    // GuildPass SDK: Return evaluated output value.
-    return validateRoleRequirementStub(walletAddress, requirement);
-    // GuildPass SDK: End of logic containment structure block.
+  public async validateRoleRequirement(
+    params: RoleRequirementParams,
+    options?: RequestOptions,
+  ): Promise<boolean> {
+    const { walletAddress, requirement, chainId } = params;
+    const chainConfig = this.getChainConfig(chainId);
+
+    if (!chainConfig.rpcUrl) {
+      throw new GuildPassError(
+        'rpcUrl is required for contract calls',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    const rpcUrl = chainConfig.rpcUrl;
+    return validateAccessRequirement(walletAddress, requirement, (to, data) =>
+      this.performEthCall(to, data, rpcUrl, options),
+    );
   }
 
   // ---------------------------------------------------------------------------
