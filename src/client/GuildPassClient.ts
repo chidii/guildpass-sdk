@@ -167,12 +167,13 @@ export class GuildPassClient {
 
   /**
    * Returns the current SDK configuration without sensitive values.
-   * Sensitive fields such as `apiKey` are omitted from this public snapshot.   
+   * Sensitive fields such as `apiKey` are omitted from this public snapshot.
    * The SDK continues to use the real API key internally for authenticated requests.
    */
   public getConfig(): Omit<GuildPassClientConfig, 'apiKey'> {
-    const { apiKey: _redacted, ...safeConfig } = this.config;
-    return safeConfig;
+    const safeConfig: Partial<GuildPassClientConfig> = { ...this.config };
+    delete safeConfig.apiKey;
+    return safeConfig as Omit<GuildPassClientConfig, 'apiKey'>;
   }
 
   // ---------------------------------------------------------------------------
