@@ -164,42 +164,24 @@ export function validateConfig(config: GuildPassClientConfig): void {
   if (config.retry) {
     const r = config.retry;
 
-    if (typeof r.maxRetries !== 'number' || r.maxRetries < 0 || !Number.isFinite(r.maxRetries)) {
-      throw new GuildPassError(
-        'retry.maxRetries must be a non-negative finite number',
-        GuildPassErrorCode.INVALID_CONFIG,
-      );
+    if (r.maxRetries !== undefined && (typeof r.maxRetries !== 'number' || !Number.isFinite(r.maxRetries) || r.maxRetries < 0)) {
+      throw new GuildPassError('retry.maxRetries must be a non-negative finite number', GuildPassErrorCode.INVALID_CONFIG);
     }
 
-    if (typeof r.baseDelayMs !== 'number' || r.baseDelayMs < 0 || !Number.isFinite(r.baseDelayMs)) {
-      throw new GuildPassError(
-        'retry.baseDelayMs must be a non-negative finite number',
-        GuildPassErrorCode.INVALID_CONFIG,
-      );
+    if (r.baseDelayMs !== undefined && (typeof r.baseDelayMs !== 'number' || !Number.isFinite(r.baseDelayMs) || r.baseDelayMs < 0)) {
+      throw new GuildPassError('retry.baseDelayMs must be a non-negative finite number', GuildPassErrorCode.INVALID_CONFIG);
     }
 
-    if (typeof r.maxDelayMs !== 'number' || r.maxDelayMs < 0 || !Number.isFinite(r.maxDelayMs)) {
-      throw new GuildPassError(
-        'retry.maxDelayMs must be a non-negative finite number',
-        GuildPassErrorCode.INVALID_CONFIG,
-      );
+    if (r.maxDelayMs !== undefined && (typeof r.maxDelayMs !== 'number' || !Number.isFinite(r.maxDelayMs) || r.maxDelayMs < 0)) {
+      throw new GuildPassError('retry.maxDelayMs must be a non-negative finite number', GuildPassErrorCode.INVALID_CONFIG);
     }
 
     if (r.baseDelayMs !== undefined && r.maxDelayMs !== undefined && r.maxDelayMs < r.baseDelayMs) {
-      throw new GuildPassError(
-        'retry.maxDelayMs cannot be less than baseDelayMs',
-        GuildPassErrorCode.INVALID_CONFIG,
-      );
+      throw new GuildPassError('retry.maxDelayMs cannot be less than baseDelayMs', GuildPassErrorCode.INVALID_CONFIG);
     }
 
-    if (
-      !Array.isArray(r.retryableStatuses) ||
-      r.retryableStatuses.some((s) => typeof s !== 'number' || !Number.isFinite(s))
-    ) {
-      throw new GuildPassError(
-        'retryableStatuses must be an array of valid HTTP status numbers',
-        GuildPassErrorCode.INVALID_CONFIG,
-      );
+    if (r.retryableStatuses !== undefined && (!Array.isArray(r.retryableStatuses) || r.retryableStatuses.length === 0 || r.retryableStatuses.some((s) => typeof s !== 'number' || !Number.isFinite(s)))) {
+      throw new GuildPassError('retryableStatuses must be a non-empty array of valid HTTP status numbers', GuildPassErrorCode.INVALID_CONFIG);
     }
   }
   // END RETRY VALIDATION 
