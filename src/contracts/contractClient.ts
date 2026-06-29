@@ -17,6 +17,8 @@ import {
 // GuildPass SDK: Pull in package or module bindings.
 import { validateRoleRequirementStub } from './contractHelpers';
 import { GuildPassClientConfig, resolveChainConfig } from '../config/sdkConfig';
+import { HttpClient } from '../http/httpClient';
+import { RequestOptions } from '../types/common';
 
 export const GET_GUILD_OWNER_SELECTOR = '0xab4511dc';
 export const BALANCE_OF_SELECTOR = '0x70a08231';
@@ -97,10 +99,18 @@ export const decodeUint256Result = (result: unknown): string => {
 export class ContractClient {
   // GuildPass SDK: Class member structure property or constructor.
   private readonly config: GuildPassClientConfig;
+  private readonly http: HttpClient;
 
   // GuildPass SDK: Class member structure property or constructor.
-  constructor(config: GuildPassClientConfig) {
+  constructor(config: GuildPassClientConfig, http?: HttpClient) {
     this.config = config;
+    this.http =
+      http ??
+      new HttpClient(config.apiUrl, config.apiKey, config.timeoutMs, {
+        retry: config.retry,
+        hooks: config.hooks,
+        fetch: config.fetch,
+      });
     // GuildPass SDK: End of logic containment structure block.
   }
 
@@ -120,7 +130,10 @@ export class ContractClient {
    * Fetches the membership token balance for a wallet.
    */
   // GuildPass SDK: Class member structure property or constructor.
-  public async getMembershipTokenBalance(params: TokenBalanceParams): Promise<string> {
+  public async getMembershipTokenBalance(
+    params: TokenBalanceParams,
+    options?: RequestOptions,
+  ): Promise<string> {
     // GuildPass SDK: Variable binding initialization.
     const { walletAddress, chainId } = params;
     const chainConfig = this.getChainConfig(chainId);
@@ -144,40 +157,28 @@ export class ContractClient {
 
     validateAddress(contractAddress);
 
-    let response: Response;
-    try {
-      response = await fetch(chainConfig.rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'eth_call',
-          params: [
-            {
-              to: contractAddress,
-              data: `${BALANCE_OF_SELECTOR}${encodeAddressArgument(walletAddress)}`,
-            },
-            'latest',
-          ],
-        }),
-      });
-    } catch (error) {
-      throw new GuildPassError(
-        'Unable to reach configured RPC provider',
-        GuildPassErrorCode.HTTP_ERROR,
-        undefined,
-        error,
-      );
-    }
-
-    const payload = (await response.json().catch(() => undefined)) as
-      | (JsonRpcSuccess & JsonRpcError)
-      | undefined;
-
-    if (!response.ok) {
-      throw GuildPassError.fromHttpError(response.status, payload);
-    }
+    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
+      chainConfig.rpcUrl,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [
+          {
+            to: contractAddress,
+            data: `${BALANCE_OF_SELECTOR}${encodeAddressArgument(walletAddress)}`,
+          },
+          'latest',
+        ],
+      },
+      {
+        ...options,
+        retry: {
+          allowMutatingRetry: true,
+          ...options?.retry,
+        },
+      },
+    );
 
     if (payload?.error) {
       throw new GuildPassError(
@@ -196,7 +197,7 @@ export class ContractClient {
    * Fetches the owner of a guild from the contract.
    */
   // GuildPass SDK: Class member structure property or constructor.
-  public async getGuildOwner(params: GuildOwnerParams): Promise<string> {
+  public async getGuildOwner(params: GuildOwnerParams, options?: RequestOptions): Promise<string> {
     const chainConfig = this.getChainConfig(params.chainId);
     const { guildId, contractAddress = chainConfig.contractAddress } = params;
     const rpcUrl = chainConfig.rpcUrl;
@@ -220,40 +221,28 @@ export class ContractClient {
     validateAddress(contractAddress);
     const data = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(guildId)}`;
 
-    let response: Response;
-    try {
-      response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'eth_call',
-          params: [
-            {
-              to: contractAddress,
-              data,
-            },
-            'latest',
-          ],
-        }),
-      });
-    } catch (error) {
-      throw new GuildPassError(
-        'Unable to reach configured RPC provider',
-        GuildPassErrorCode.HTTP_ERROR,
-        undefined,
-        error,
-      );
-    }
-
-    const payload = (await response.json().catch(() => undefined)) as
-      | (JsonRpcSuccess & JsonRpcError)
-      | undefined;
-
-    if (!response.ok) {
-      throw GuildPassError.fromHttpError(response.status, payload);
-    }
+    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
+      rpcUrl,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [
+          {
+            to: contractAddress,
+            data,
+          },
+          'latest',
+        ],
+      },
+      {
+        ...options,
+        retry: {
+          allowMutatingRetry: true,
+          ...options?.retry,
+        },
+      },
+    );
 
     if (payload?.error) {
       throw new GuildPassError(

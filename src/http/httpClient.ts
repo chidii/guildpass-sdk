@@ -261,11 +261,21 @@ export class HttpClient {
     path: string,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponse<T>> {
-    const { method = 'GET', headers = {}, body, params, timeoutMs = this.timeoutMs, retry, signal } = options;
+    const {
+      method = 'GET',
+      headers = {},
+      body,
+      params,
+      timeoutMs = this.timeoutMs,
+      retry,
+      signal,
+    } = options;
+
+    const isAbsolute = path.startsWith('http://') || path.startsWith('https://');
 
     const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(this.apiKey ? { 'X-API-Key': this.apiKey } : {}),
+      ...(this.apiKey && !isAbsolute ? { 'X-API-Key': this.apiKey } : {}),
       ...headers,
     };
 
@@ -297,7 +307,10 @@ export class HttpClient {
       throw new GuildPassError('Request cancelled by caller', GuildPassErrorCode.REQUEST_CANCELLED);
     }
 
-    const url = new URL(`${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`);
+    const url = isAbsolute
+      ? new URL(path)
+      : new URL(`${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`);
+
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.append(key, String(value));
@@ -308,11 +321,15 @@ export class HttpClient {
 
     while (true) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, timeoutMs);
 
       let onAbort: (() => void) | undefined;
       if (signal) {
-        onAbort = () => controller.abort();
+        onAbort = () => {
+          controller.abort();
+        };
         signal.addEventListener('abort', onAbort);
       }
 
