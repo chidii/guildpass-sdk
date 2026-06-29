@@ -516,7 +516,6 @@ describe('ContractClient Batch', () => {
     rpcUrl: RPC_URL,
     contractAddress: CONTRACT,
   });
-  const walletAddress = WALLET;
 
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -1055,7 +1054,10 @@ describe('Address Argument Encoding', () => {
   it('produces consistent full calldata for balanceOf calls', () => {
     for (const fixture of contractEncodingFixtures.fullCalldata) {
       if (fixture.method !== 'balanceOf') continue;
-      const encoded = `${BALANCE_OF_SELECTOR}${encodeAddressArgument(fixture.params.walletAddress!)}`;
+      if (!fixture.params.walletAddress) {
+        throw new Error('balanceOf calldata fixture must include walletAddress');
+      }
+      const encoded = `${BALANCE_OF_SELECTOR}${encodeAddressArgument(fixture.params.walletAddress)}`;
       expect(encoded).toBe(fixture.calldata);
     }
   });
@@ -1086,7 +1088,10 @@ describe('Guild ID Encoding', () => {
   it('produces consistent full calldata for getGuildOwner calls', () => {
     for (const fixture of contractEncodingFixtures.fullCalldata) {
       if (fixture.method !== 'getGuildOwner') continue;
-      const encoded = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(fixture.params.guildId!)}`;
+      if (!fixture.params.guildId) {
+        throw new Error('getGuildOwner calldata fixture must include guildId');
+      }
+      const encoded = `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(fixture.params.guildId)}`;
       expect(encoded).toBe(fixture.calldata);
     }
   });

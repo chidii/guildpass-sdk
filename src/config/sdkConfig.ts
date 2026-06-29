@@ -4,6 +4,7 @@ import { GuildPassError } from '../errors/GuildPassError';
 import { GuildPassErrorCode } from '../errors/errorCodes';
 import { CacheAdapter } from '../cache/cache.types';
 import { ChainConfig } from '../contracts/contract.types';
+import { validateAddress } from '../utils/validation';
 
 // GuildPass SDK: Exported component definition.
 export type GuildPassClientConfig = {
@@ -128,10 +129,62 @@ export function validateConfig(config: GuildPassClientConfig): void {
   }
   // END RETRY VALIDATION 
 
+  validateChainsConfig(config.chains);
+
   const transport = config.fetch ?? globalThis.fetch;
   if (typeof transport !== 'function') {
     throw new GuildPassError(
       'A fetch-compatible transport is required. Provide config.fetch or use a runtime with globalThis.fetch.',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+}
+
+function validateChainsConfig(chains?: Record<number, ChainConfig>): void {
+  if (!chains) {
+    return;
+  }
+
+  for (const [chainIdKey, chainConfig] of Object.entries(chains)) {
+    const chainId = Number(chainIdKey);
+
+    if (!Number.isSafeInteger(chainId) || chainId <= 0 || String(chainId) !== chainIdKey) {
+      throw new GuildPassError(
+        `Invalid chains[${chainIdKey}]: chain ID must be a positive safe integer`,
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+
+    if (chainConfig.rpcUrl !== undefined) {
+      validateChainRpcUrl(chainIdKey, chainConfig.rpcUrl);
+    }
+
+    if (chainConfig.contractAddress !== undefined) {
+      validateChainContractAddress(chainIdKey, chainConfig.contractAddress);
+    }
+  }
+}
+
+function validateChainRpcUrl(chainIdKey: string, rpcUrl: string): void {
+  try {
+    const url = new URL(rpcUrl);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error();
+    }
+  } catch {
+    throw new GuildPassError(
+      `Invalid chains[${chainIdKey}].rpcUrl: expected an http or https URL`,
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+}
+
+function validateChainContractAddress(chainIdKey: string, contractAddress: string): void {
+  try {
+    validateAddress(contractAddress);
+  } catch {
+    throw new GuildPassError(
+      `Invalid chains[${chainIdKey}].contractAddress: expected a valid EVM address`,
       GuildPassErrorCode.INVALID_CONFIG,
     );
   }
