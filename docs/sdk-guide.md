@@ -84,6 +84,76 @@ The SDK keeps the real API key internally and continues to use it for
 authenticated requests. Avoid logging the original constructor config object
 directly if it contains secrets.
 
+## Client Metadata Headers
+
+The SDK can attach lightweight metadata headers to API requests, helping backend
+services identify the SDK version, runtime, and integration source during
+debugging and support.
+
+### Default Behaviour
+
+By default, every GuildPass API-relative request includes an
+`X-GuildPass-SDK-Version` header with the bundled SDK version:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  apiKey: process.env.GUILDPASS_API_KEY,
+});
+
+// Requests automatically include:
+//   X-GuildPass-SDK-Version: 0.1.0
+await client.guilds.getGuild({ guildId: 'prime-guild' });
+```
+
+### Custom Client Identification
+
+Set `clientName` and `clientVersion` to identify your integration in the
+`X-GuildPass-Client` header:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  clientName: 'my-dapp',
+  clientVersion: '2.1.0',
+});
+
+// Requests include:
+//   X-GuildPass-SDK-Version: 0.1.0
+//   X-GuildPass-Client: my-dapp/2.1.0
+await client.access.checkAccess({ ... });
+```
+
+When `clientVersion` is omitted, only the client name is sent. When only
+`clientVersion` is provided, it is sent alone.
+
+### Disabling Metadata
+
+Set `sendClientMetadata: false` to suppress all metadata headers:
+
+```typescript
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  sendClientMetadata: false,
+});
+
+// No X-GuildPass-* headers are attached.
+await client.roles.getRoles({ guildId: 'guild-1' });
+```
+
+### Privacy and Security Considerations
+
+- **Metadata headers are only sent to GuildPass API-relative requests.** External
+  absolute URLs (e.g., custom RPC endpoints) never receive `X-GuildPass-*`
+  headers. Similarly, the `X-API-Key` header is never sent to external URLs.
+- **Metadata headers never include API keys, wallet secrets, or tokens.** The
+  header values only contain the SDK version and the consumer-provided client
+  name/version strings.
+- **Client name and version are public by design.** Use generic identifiers if
+  you prefer not to expose specific application names in network logs.
+- **Configuration is inspectable.** `client.getConfig()` returns `clientName`,
+  `clientVersion`, and `sendClientMetadata` (non-sensitive by design).
+
 ## Address Normalization and Checksums
 
 The SDK automatically normalizes addresses to lowercase for consistency and accepts both lowercase and mixed-case addresses by default.

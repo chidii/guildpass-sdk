@@ -22,10 +22,37 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export type ClientMetadata = {
+  /**
+   * SDK version to send in the `X-GuildPass-SDK-Version` header.
+   * Defaults to the bundled SDK version. Set to an empty string to omit
+   * only the version header (client name will still be sent if provided).
+   */
+  sdkVersion?: string;
+  /**
+   * Optional client or integration name (e.g. `"my-dapp"`, `"discord-bot"`).
+   * Sent as `X-GuildPass-Client` alongside the SDK version.
+   */
+  clientName?: string;
+  /**
+   * Optional client version string sent as part of `X-GuildPass-Client`.
+   * When omitted, only the client name is sent (if provided).
+   */
+  clientVersion?: string;
+  /**
+   * Whether to send client metadata headers (`X-GuildPass-SDK-Version`,
+   * `X-GuildPass-Client`) on GuildPass API-relative requests.
+   * Defaults to `true`. Set to `false` to disable all metadata headers.
+   */
+  sendClientMetadata?: boolean;
+};
+
 export type HttpClientConfig = {
   retry?: RetryConfig;
   hooks?: HttpHooks;
   fetch?: FetchLike;
+  /** Optional client metadata attached as headers on API-relative requests. */
+  metadata?: ClientMetadata;
 };
 
 // GuildPass SDK: Exported function execution unit.
