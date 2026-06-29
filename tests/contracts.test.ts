@@ -421,16 +421,326 @@ describe('ContractClient (Stubs)', () => {
     });
   });
 
-  // GuildPass SDK: Test suite container block.
-  it('should throw NOT_IMPLEMENTED for validateRoleRequirement', async () => {
-    await expect(
-      client.contracts.validateRoleRequirement({
-        walletAddress,
-        requirement: { type: 'TOKEN', minAmount: '1' },
-        // GuildPass SDK: End of logic containment structure block.
-      }),
-    ).rejects.toMatchObject({ code: GuildPassErrorCode.NOT_IMPLEMENTED });
-    // GuildPass SDK: End of logic containment structure block.
+});
+
+// ---------------------------------------------------------------------------
+// validateRoleRequirement: on-chain TOKEN / NFT / ROLE checks
+// ---------------------------------------------------------------------------
+describe('ContractClient.validateRoleRequirement', () => {
+  const client = new GuildPassClient({
+    apiUrl: BASE_URL,
+    rpcUrl: RPC_URL,
+    contractAddress: CONTRACT,
+  });
+
+  const walletAddress = WALLET;
+  const TOKEN_CONTRACT = '0x4444444444444444444444444444444444444444';
+  const NFT_CONTRACT = '0x5555555555555555555555555555555555555555';
+  const ROLE_CONTRACT = '0x6666666666666666666666666666666666666666';
+
+  const hexWord = (hex: string): string => `0x${hex.padStart(64, '0')}`;
+  const addressWord = (address: string): string => hexWord(address.slice(2).toLowerCase());
+  const boolWord = (value: boolean): string => hexWord(value ? '1' : '0');
+
+  const mockEthCallResult = (result: string) => {
+    mockFetch().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
+    });
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('TOKEN requirements', () => {
+    it('returns true when balance meets minAmount', async () => {
+      mockEthCallResult(hexWord((42).toString(16)));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT, minAmount: '10' },
+        }),
+      ).resolves.toBe(true);
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/^https:\/\/rpc\.test\.com\/?$/),
+        expect.objectContaining({
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_call',
+            params: [
+              { to: TOKEN_CONTRACT, data: `${BALANCE_OF_SELECTOR}${encodeAddressArgument(walletAddress)}` },
+              'latest',
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('returns false when balance is below minAmount', async () => {
+      mockEthCallResult(hexWord((1).toString(16)));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT, minAmount: '10' },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('defaults minAmount to 1 when omitted', async () => {
+      mockEthCallResult(hexWord((0).toString(16)));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('rejects when address is missing', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', minAmount: '1' },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_INPUT });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('NFT requirements', () => {
+    it('returns true when the wallet owns the specific token id', async () => {
+      mockEthCallResult(addressWord(walletAddress));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'NFT', address: NFT_CONTRACT, id: '7' },
+        }),
+      ).resolves.toBe(true);
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/^https:\/\/rpc\.test\.com\/?$/),
+        expect.objectContaining({
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_call',
+            params: [
+              { to: NFT_CONTRACT, data: `0x6352211e${(7).toString(16).padStart(64, '0')}` },
+              'latest',
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('returns false when a different wallet owns the token id', async () => {
+      mockEthCallResult(addressWord(OWNER));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'NFT', address: NFT_CONTRACT, id: '7' },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('falls back to collection-wide balanceOf when no id is given', async () => {
+      mockEthCallResult(hexWord((2).toString(16)));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'NFT', address: NFT_CONTRACT, minAmount: '1' },
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('rejects when address is missing', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'NFT', id: '7' },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_INPUT });
+    });
+
+    it('rejects a non-numeric token id', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'NFT', address: NFT_CONTRACT, id: 'not-a-number' },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_INPUT });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ROLE requirements', () => {
+    it('returns true when hasRole resolves truthy', async () => {
+      mockEthCallResult(boolWord(true));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'ROLE', address: ROLE_CONTRACT, id: 'ADMIN' },
+        }),
+      ).resolves.toBe(true);
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/^https:\/\/rpc\.test\.com\/?$/),
+        expect.objectContaining({
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_call',
+            params: [
+              {
+                to: ROLE_CONTRACT,
+                data: `0x91d14854${encodeGuildId('ADMIN')}${encodeAddressArgument(walletAddress)}`,
+              },
+              'latest',
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('returns false when hasRole resolves falsy', async () => {
+      mockEthCallResult(boolWord(false));
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'ROLE', address: ROLE_CONTRACT, id: 'ADMIN' },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('rejects when id is missing', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'ROLE', address: ROLE_CONTRACT },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_INPUT });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects when address is missing', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'ROLE', id: 'ADMIN' },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_INPUT });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('WHITELIST and unsupported requirements', () => {
+    it('rejects WHITELIST with a clear NOT_IMPLEMENTED error', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'WHITELIST' },
+        }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.NOT_IMPLEMENTED,
+        message: expect.stringContaining('WHITELIST'),
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unrecognised requirement type with a clear error', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'UNKNOWN' as never },
+        }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.INVALID_INPUT,
+        message: expect.stringContaining('UNKNOWN'),
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('shared input/config validation', () => {
+    it('rejects an invalid wallet address before calling out', async () => {
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress: 'not-an-address',
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_ADDRESS });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws INVALID_CONFIG when rpcUrl is not configured', async () => {
+      const clientWithoutRpc = new GuildPassClient({ apiUrl: BASE_URL });
+
+      await expect(
+        clientWithoutRpc.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT },
+        }),
+      ).rejects.toMatchObject({ code: GuildPassErrorCode.INVALID_CONFIG });
+    });
+
+    it('resolves the RPC endpoint for the requested chain', async () => {
+      const chainClient = new GuildPassClient({
+        apiUrl: BASE_URL,
+        chains: {
+          8453: { rpcUrl: 'https://base.rpc', contractAddress: CONTRACT },
+        },
+      });
+      mockEthCallResult(hexWord((1).toString(16)));
+
+      await expect(
+        chainClient.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT },
+          chainId: 8453,
+        }),
+      ).resolves.toBe(true);
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/^https:\/\/base\.rpc\/?$/),
+        expect.anything(),
+      );
+    });
+
+    it('surfaces RPC-level errors as HTTP_ERROR', async () => {
+      mockFetch().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: () => Promise.resolve({ error: { code: -32000, message: 'execution reverted' } }),
+      });
+
+      await expect(
+        client.contracts.validateRoleRequirement({
+          walletAddress,
+          requirement: { type: 'TOKEN', address: TOKEN_CONTRACT },
+        }),
+      ).rejects.toMatchObject({
+        code: GuildPassErrorCode.HTTP_ERROR,
+        message: 'execution reverted',
+      });
+    });
   });
 });
 

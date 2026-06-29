@@ -40,6 +40,8 @@ export type GuildOwnerParams = {
 export type RoleRequirementParams = {
   walletAddress: string;
   requirement: AccessRequirement;
+  /** Chain to resolve the RPC endpoint for (TOKEN/NFT/ROLE checks only). */
+  chainId?: number;
   // GuildPass SDK: End of logic containment structure block.
 };
 
