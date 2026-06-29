@@ -42,8 +42,10 @@ export type HttpRequestOptions = {
   // GuildPass SDK: End of logic containment structure block.
 };
 
-// GuildPass SDK: Simplified options for service methods.
-export type RequestOptions = Pick<HttpRequestOptions, 'timeoutMs' | 'signal'>;
+// The public, service-method request options live in ../types/common
+// (`RequestOptions`, which also carries `retry`). This module intentionally does
+// NOT redeclare a second `RequestOptions` type — having two same-named types in
+// different modules is the import conflict this removal resolves (see #83).
 
 // GuildPass SDK: Exported component definition.
 export type HttpResponse<T = any> = {
