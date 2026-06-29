@@ -289,7 +289,11 @@ export class ContractClient {
    * @param rpcUrl   - The JSON-RPC endpoint URL.
    * @returns        - Ordered results, one per input call.
    */
-  public async batchEthCall(calls: BatchEthCallItem[], rpcUrl: string): Promise<BatchItemResult[]> {
+  public async batchEthCall(
+    calls: BatchEthCallItem[],
+    rpcUrl: string,
+    options?: RequestOptions,
+  ): Promise<BatchItemResult[]> {
     if (!Array.isArray(calls) || calls.length === 0) {
       throw new GuildPassError(
         'At least one call is required for batchEthCall',
@@ -336,29 +340,26 @@ export class ContractClient {
       ],
     }));
 
-    let response: Response;
-    try {
-      response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batchPayload),
-      });
-    } catch (error) {
-      throw new GuildPassError(
-        'Unable to reach configured RPC provider for batch call',
-        GuildPassErrorCode.HTTP_ERROR,
-        undefined,
-        error,
-      );
-    }
+    type JsonRpcBatchResponseItem = {
+      id?: number;
+      result?: unknown;
+      error?: {
+        code?: number;
+        message?: string;
+      };
+    };
 
-    const payloads = (await response.json().catch(() => undefined)) as
-      | Array<{ id?: number; result?: unknown; error?: { code?: number; message?: string } }>
-      | undefined;
-
-    if (!response.ok) {
-      throw GuildPassError.fromHttpError(response.status, payloads);
-    }
+    const payloads = await this.http.post<JsonRpcBatchResponseItem[]>(
+      rpcUrl,
+      batchPayload,
+      {
+        ...options,
+        retry: {
+          allowMutatingRetry: true,
+          ...options?.retry,
+        },
+      },
+    );
 
     if (!Array.isArray(payloads)) {
       throw new GuildPassError(
@@ -368,7 +369,7 @@ export class ContractClient {
     }
 
     // Map responses back by their JSON-RPC id to preserve input order
-    const responseMap = new Map<number, (typeof payloads)[number]>();
+    const responseMap = new Map<number, JsonRpcBatchResponseItem>();
     for (const p of payloads) {
       if (p && typeof p.id === 'number') {
         responseMap.set(p.id, p);
@@ -404,7 +405,7 @@ export class ContractClient {
       } else {
         results.push({
           status: 'success',
-          result: payload.result as string,
+          result: payload.result,
         });
       }
     }
@@ -425,6 +426,7 @@ export class ContractClient {
    */
   public async getMembershipTokenBalancesBatch(
     params: TokenBalancesBatchParams,
+    options?: RequestOptions,
   ): Promise<BatchItemResult[]> {
     const { walletAddresses, chainId, contractAddress: perCallContract } = params;
 
@@ -465,7 +467,7 @@ export class ContractClient {
       data: `${BALANCE_OF_SELECTOR}${encodeAddressArgument(addr)}`,
     }));
 
-    const rawResults = await this.batchEthCall(calls, chainConfig.rpcUrl);
+    const rawResults = await this.batchEthCall(calls, chainConfig.rpcUrl, options);
 
     // Decode uint256 results where successful
     return rawResults.map((item) => {
@@ -498,6 +500,7 @@ export class ContractClient {
    */
   public async getGuildOwnersBatch(
     params: GuildOwnersBatchParams,
+    options?: RequestOptions,
   ): Promise<BatchItemResult[]> {
     const { guildIds, chainId, contractAddress: perCallContract } = params;
 
@@ -538,7 +541,7 @@ export class ContractClient {
       data: `${GET_GUILD_OWNER_SELECTOR}${encodeGuildId(gid)}`,
     }));
 
-    const rawResults = await this.batchEthCall(calls, chainConfig.rpcUrl);
+    const rawResults = await this.batchEthCall(calls, chainConfig.rpcUrl, options);
 
     // Decode address results where successful
     return rawResults.map((item) => {
