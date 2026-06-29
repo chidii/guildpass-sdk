@@ -8,6 +8,7 @@ import { validateAddress, validateGuildId } from '../utils/validation';
 import {
   BatchEthCallItem,
   BatchItemResult,
+  FormattedTokenBalance,
   GuildOwnerParams,
   GuildOwnersBatchParams,
   RoleRequirementParams,
@@ -22,6 +23,8 @@ import { RequestOptions } from '../types/common';
 
 export const GET_GUILD_OWNER_SELECTOR = '0xab4511dc';
 export const BALANCE_OF_SELECTOR = '0x70a08231';
+/** ERC-20 `decimals()` selector. */
+export const DECIMALS_SELECTOR = '0x313ce567';
 export const HEX_32_BYTES_LENGTH = 64;
 
 type JsonRpcSuccess = {
@@ -93,6 +96,36 @@ export const decodeUint256Result = (result: unknown): string => {
   }
 
   return BigInt(result).toString(10);
+};
+
+/**
+ * Formats a raw base-unit balance (decimal integer string) into a
+ * human-readable amount using the token's `decimals`, with exact string math
+ * (no floating point, so large balances keep full precision).
+ *
+ * @example formatUnits('1500000', 6) // '1.5'
+ * @example formatUnits('250', 6)     // '0.00025'
+ */
+export const formatUnits = (rawAmount: string, decimals: number): string => {
+  if (typeof rawAmount !== 'string' || !/^\d+$/.test(rawAmount)) {
+    throw new GuildPassError(
+      'formatUnits expects a non-negative integer string',
+      GuildPassErrorCode.INVALID_RESPONSE,
+    );
+  }
+  if (!Number.isInteger(decimals) || decimals < 0) {
+    throw new GuildPassError(
+      'formatUnits decimals must be a non-negative integer',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+  if (decimals === 0) {
+    return rawAmount.replace(/^0+(?=\d)/, '');
+  }
+  const padded = rawAmount.padStart(decimals + 1, '0');
+  const integerPart = padded.slice(0, padded.length - decimals).replace(/^0+(?=\d)/, '');
+  const fractionPart = padded.slice(padded.length - decimals).replace(/0+$/, '');
+  return fractionPart ? `${integerPart}.${fractionPart}` : integerPart;
 };
 
 // GuildPass SDK: Exported function execution unit.
@@ -191,6 +224,84 @@ export class ContractClient {
 
     return decodeUint256Result(payload?.result);
     // GuildPass SDK: End of logic containment structure block.
+  }
+
+  /**
+   * Reads the ERC-20 `decimals()` of the membership/token contract. Needed to
+   * turn the raw balance from {@link getMembershipTokenBalance} into a
+   * human-readable amount.
+   */
+  public async getTokenDecimals(
+    params: TokenBalanceParams,
+    options?: RequestOptions,
+  ): Promise<number> {
+    const chainConfig = this.getChainConfig(params.chainId);
+    const contractAddress = params.contractAddress ?? chainConfig.contractAddress;
+
+    if (!chainConfig.rpcUrl) {
+      throw new GuildPassError(
+        'rpcUrl is required for contract calls',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+    if (!contractAddress) {
+      throw new GuildPassError(
+        'contractAddress is required for token decimals lookup',
+        GuildPassErrorCode.INVALID_CONFIG,
+      );
+    }
+    validateAddress(contractAddress);
+
+    const payload = await this.http.post<(JsonRpcSuccess & JsonRpcError) | undefined>(
+      chainConfig.rpcUrl,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [{ to: contractAddress, data: DECIMALS_SELECTOR }, 'latest'],
+      },
+      {
+        ...options,
+        retry: {
+          allowMutatingRetry: true,
+          ...options?.retry,
+        },
+      },
+    );
+
+    if (payload?.error) {
+      throw new GuildPassError(
+        payload.error.message ?? 'RPC provider returned an error',
+        GuildPassErrorCode.HTTP_ERROR,
+        undefined,
+        payload.error,
+      );
+    }
+
+    const decimals = Number(decodeUint256Result(payload?.result));
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+      throw new GuildPassError(
+        'Token contract returned an invalid decimals value',
+        GuildPassErrorCode.INVALID_RESPONSE,
+      );
+    }
+    return decimals;
+  }
+
+  /**
+   * Convenience: fetch the membership token balance together with the token's
+   * `decimals` and a human-readable `formatted` string. Useful for displaying a
+   * balance directly in a UI without manual decimal handling.
+   */
+  public async getMembershipTokenBalanceFormatted(
+    params: TokenBalanceParams,
+    options?: RequestOptions,
+  ): Promise<FormattedTokenBalance> {
+    const [raw, decimals] = await Promise.all([
+      this.getMembershipTokenBalance(params, options),
+      this.getTokenDecimals(params, options),
+    ]);
+    return { raw, decimals, formatted: formatUnits(raw, decimals) };
   }
 
   /**

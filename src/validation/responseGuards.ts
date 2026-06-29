@@ -1,5 +1,4 @@
 ﻿import { AccessRequirement } from '../types/common';
-import { AccessRequirement } from '../types/common';
 import { AccessCheckResult } from '../access/access.types';
 import { Membership } from '../membership/membership.types';
 import { GuildRole } from '../roles/roles.types';
@@ -71,17 +70,6 @@ export function isGuildRole(value: unknown): value is GuildRole {
 
 export function isGuildRoleArray(value: unknown): value is GuildRole[] {
   return Array.isArray(value) && value.every(isGuildRole);
-}
-
-const VALID_REQUIREMENT_TYPES = new Set(["TOKEN", "NFT", "ROLE", "WHITELIST"]);
-
-function isAccessRequirement(value: unknown): value is AccessRequirement {
-  if (!isRecord(value)) return false;
-  if (!isString(value.type) || !VALID_REQUIREMENT_TYPES.has(value.type)) return false;
-  if (value.address !== undefined && !isString(value.address)) return false;
-  if (value.id !== undefined && !isString(value.id)) return false;
-  if (value.minAmount !== undefined && !isString(value.minAmount)) return false;
-  return true;
 }
 
 const VALID_REQUIREMENT_TYPES = new Set(["TOKEN", "NFT", "ROLE", "WHITELIST"]);
