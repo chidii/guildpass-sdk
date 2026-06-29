@@ -85,6 +85,31 @@ export function validateConfig(config: GuildPassClientConfig): void {
     );
   }
 
+  // INSERT CACHE VALIDATION 
+  if (
+    config.cacheTtl !== undefined &&
+    (typeof config.cacheTtl !== 'number' || config.cacheTtl < 0 || !Number.isFinite(config.cacheTtl))
+  ) {
+    throw new GuildPassError(
+      'cacheTtl must be a non-negative finite number (milliseconds)',
+      GuildPassErrorCode.INVALID_CONFIG,
+    );
+  }
+
+  if (config.cache !== undefined) {
+    const adapter = config.cache;
+    const required = ['get', 'set', 'delete', 'clear'] as const;
+    for (const method of required) {
+      if (typeof adapter[method] !== 'function') {
+        throw new GuildPassError(
+          `cache adapter must implement ${method}(): function`,
+          GuildPassErrorCode.INVALID_CONFIG,
+        );
+      }
+    }
+  }
+  // END CACHE VALIDATION 
+
   // INSERT RETRY VALIDATION 
   if (config.retry) {
     const r = config.retry;

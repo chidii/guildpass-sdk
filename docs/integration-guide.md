@@ -230,3 +230,30 @@ Each sub-request is individually resolved in the response:
 
 This makes batch calls suitable for production use where you want to
 gracefully handle individual failures without losing all results.
+
+## 7. Cache Configuration
+
+The SDK supports transparent response caching via a `cache` adapter and a `cacheTtl` (in **milliseconds**):
+
+```typescript
+import { GuildPassClient, InMemoryCacheAdapter } from '@guildpass/sdk';
+
+const client = new GuildPassClient({
+  apiUrl: 'https://api.guildpass.xyz',
+  cache: new InMemoryCacheAdapter(),
+  cacheTtl: 30_000, // 30s TTL for all cached entries
+});
+```
+
+### Validation
+
+Invalid cache configuration is rejected at construction time with a clear error:
+
+- `cacheTtl` must be a non-negative finite number (milliseconds)
+- Custom `cache` adapters must implement `get`, `set`, `delete`, and `clear` as functions
+
+```typescript
+// These throw GuildPassError with code INVALID_CONFIG:
+new GuildPassClient({ apiUrl: '...', cacheTtl: -1 });
+new GuildPassClient({ apiUrl: '...', cache: { get: 'nope' } }); // missing methods
+```
